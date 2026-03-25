@@ -1,0 +1,21 @@
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Your Library</h2>
+    <ul>
+      <li *ngFor="let item of items()" (click)="select(item)">
+        {{ item.title }}
+      </li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <header class="toolbar">
+      <button (click)="castSelected()">📺 Cast</button>
+      <button (click)="playerRef.nativeElement.paused ? playerRef.nativeElement.play() : playerRef.nativeElement.pause()">
+        {{ playerRef?.nativeElement?.paused ? 'Play' : 'Pause' }}
+      </button>
+    </header>
+
+    <video #player controls playsinline preload="metadata" crossorigin="anonymous" class="player"></video>
+  </main>
+</div>
