@@ -1,6 +1,6 @@
 import {
   Component, ViewChild, ElementRef,
-  OnInit, OnDestroy, signal, effect, inject
+  OnInit, OnDestroy, signal, effect, inject, ChangeDetectorRef
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import Hls from 'hls.js';
@@ -16,40 +16,173 @@ import { CastService } from '../services/cast.service';
   styleUrls: ['./home.component.scss']
 })
 export class HomeComponent implements OnInit, OnDestroy {
-  // inject services (safe to use in field initializers)
   private media = inject(MediaService);
-  public  cast  = inject(CastService);
+  private cdr    = inject(ChangeDetectorRef);
+  public  cast   = inject(CastService);
 
-  // reactive data
-  items = toSignal(this.media.list(), { initialValue: [] as MediaItem[] });
+  items    = toSignal(this.media.list(), { initialValue: [] as MediaItem[] });
   selected = signal<MediaItem | null>(null);
 
-  @ViewChild('player', { static: true }) playerRef!: ElementRef<HTMLVideoElement>;
+  // UI state
+  isPlaying       = false;
+  isMuted         = false;
+  isFullscreen    = false;
+  showControls    = true;
+  showSidebar     = true;
+  currentTime     = 0;
+  duration        = 0;
+  volume          = 1;
+  subtitlesOn     = false;
+  subtitlesAvailable = false;
+  buffered        = 0;
+
+  private controlsTimer: any;
   private hls?: Hls;
+  private subtitleTrackEl?: HTMLTrackElement;
 
-  ngOnInit() {
-    this.cast.init();
+  @ViewChild('player',    { static: false }) playerRef!:    ElementRef<HTMLVideoElement>;
+  @ViewChild('container', { static: false }) containerRef!: ElementRef<HTMLDivElement>;
 
-    // Load locally via HLS when selection changes and NOT casting
+  constructor() {
     effect(() => {
       const sel = this.selected();
       if (!sel) return;
-      if (this.cast.isConnected()) {
-        this.detachLocal();
-        return;
-      }
-      this.loadLocal(sel.url);
+      if (this.cast.isConnected()) { this.detachLocal(); return; }
+      this.subtitlesAvailable = !!sel.subUrl;
+      this.subtitlesOn = false;
+      setTimeout(() => this.loadLocal(sel.url, sel.subUrl));
     });
 
-    // If cast connects at any time, detach local player
     effect(() => {
       if (this.cast.isConnected()) this.detachLocal();
     });
   }
 
-  ngOnDestroy() { this.detachLocal(); }
+  ngOnInit() {
+    this.cast.init();
 
-  select(item: MediaItem) { this.selected.set(item); this.loadLocal(item.url); }
+    document.addEventListener('fullscreenchange', () => {
+      this.isFullscreen = !!document.fullscreenElement;
+      this.cdr.detectChanges();
+    });
+  }
+
+  ngOnDestroy() {
+    this.detachLocal();
+    clearTimeout(this.controlsTimer);
+    document.removeEventListener('fullscreenchange', () => {});
+  }
+
+  select(item: MediaItem) {
+    this.selected.set(item);
+  }
+
+  // ── Controls ──────────────────────────────────────────────────────────────
+
+  togglePlay() {
+    if (!this.playerRef) return;
+    const v = this.playerRef.nativeElement;
+    v.paused ? v.play() : v.pause();
+  }
+
+  toggleMute() {
+    if (!this.playerRef) return;
+    const v = this.playerRef.nativeElement;
+    v.muted = !v.muted;
+    this.isMuted = v.muted;
+  }
+
+  seek(e: Event) {
+    if (!this.playerRef) return;
+    const v = this.playerRef.nativeElement;
+    const val = +(e.target as HTMLInputElement).value;
+    v.currentTime = val;
+  }
+
+  setVolume(e: Event) {
+    if (!this.playerRef) return;
+    const v = this.playerRef.nativeElement;
+    const val = +(e.target as HTMLInputElement).value;
+    v.volume = val;
+    this.volume = val;
+    this.isMuted = val === 0;
+  }
+
+  skip(sec: number) {
+    if (!this.playerRef) return;
+    const v = this.playerRef.nativeElement;
+    v.currentTime = Math.max(0, Math.min(v.duration || 0, v.currentTime + sec));
+  }
+
+  toggleSubtitles() {
+    this.subtitlesOn = !this.subtitlesOn;
+    if (this.hls && this.hls.subtitleTracks.length > 0) {
+      this.hls.subtitleTrack = this.subtitlesOn ? 0 : -1;
+    }
+    if (this.subtitleTrackEl) {
+      this.subtitleTrackEl.track.mode = this.subtitlesOn ? 'showing' : 'hidden';
+    }
+  }
+
+  toggleFullscreen() {
+    if (!this.containerRef) return;
+    const el = this.containerRef.nativeElement;
+    if (!document.fullscreenElement) {
+      el.requestFullscreen();
+    } else {
+      document.exitFullscreen();
+    }
+  }
+
+  onMouseMove() {
+    this.showControls = true;
+    clearTimeout(this.controlsTimer);
+    this.controlsTimer = setTimeout(() => {
+      if (this.isPlaying) {
+        this.showControls = false;
+        this.cdr.detectChanges();
+      }
+    }, 2800);
+  }
+
+  // ── Video events ──────────────────────────────────────────────────────────
+
+  onPlay()   { this.isPlaying = true; }
+  onPause()  { this.isPlaying = false; this.showControls = true; }
+  onEnded()  { this.isPlaying = false; this.showControls = true; }
+
+  onTimeUpdate() {
+    const v = this.playerRef.nativeElement;
+    this.currentTime = v.currentTime;
+    this.duration    = v.duration || 0;
+    if (v.buffered.length > 0) {
+      this.buffered = (v.buffered.end(v.buffered.length - 1) / (v.duration || 1)) * 100;
+    }
+  }
+
+  onVolumeChange() {
+    const v = this.playerRef.nativeElement;
+    this.isMuted = v.muted;
+    this.volume  = v.volume;
+  }
+
+  // ── Formatters ───────────────────────────────────────────────────────────
+
+  formatTime(s: number): string {
+    if (!s || isNaN(s)) return '0:00';
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = Math.floor(s % 60);
+    const mm = m.toString().padStart(2, '0');
+    const ss = sec.toString().padStart(2, '0');
+    return h > 0 ? `${h}:${mm}:${ss}` : `${m}:${ss}`;
+  }
+
+  get progressPct(): number {
+    return this.duration ? (this.currentTime / this.duration) * 100 : 0;
+  }
+
+  // ── Cast ──────────────────────────────────────────────────────────────────
 
   async castSelected() {
     const s = this.selected();
@@ -58,52 +191,59 @@ export class HomeComponent implements OnInit, OnDestroy {
     await this.cast.castUrl(s.url, 'application/vnd.apple.mpegurl', s.title);
   }
 
-  // --- Local HLS playback ---
-  private loadLocal(url: string) {
+  // ── Local HLS ─────────────────────────────────────────────────────────────
+
+  private loadLocal(url: string, subUrl?: string) {
+    if (!this.playerRef) return;
     const video = this.playerRef.nativeElement;
-
-    this.detachLocal(); // clean previous
-
-    video.muted = false;
-    video.volume = 1.0;
+    this.detachLocal();
+    video.muted  = false;
+    video.volume = this.volume;
 
     if (Hls.isSupported()) {
-      this.hls = new Hls();
+      this.hls = new Hls({ enableWorker: true });
       this.hls.attachMedia(video);
       this.hls.on(Hls.Events.MEDIA_ATTACHED, () => this.hls!.loadSource(url));
-      this.hls.on(Hls.Events.ERROR, (_e, data) => {
-        console.error('HLS error', data);
-        if (!this.hls || !data.fatal) return;
-        switch (data.type) {
-          case Hls.ErrorTypes.NETWORK_ERROR: this.hls.startLoad(); break;
-          case Hls.ErrorTypes.MEDIA_ERROR:   this.hls.recoverMediaError(); break;
-          default: this.hls.destroy(); this.hls = undefined; break;
-        }
-      });
       this.hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        // Enable the first subtitle track (if available)
-        if (this.hls!.subtitleTracks.length > 0) {
-          this.hls!.subtitleTrack = 0;
+        video.play().catch(() => {});
+        this.hls!.subtitleTrack = -1;
+        if (subUrl) {
+          const track = document.createElement('track');
+          track.kind    = 'subtitles';
+          track.label   = 'Legendas';
+          track.srclang = 'pt';
+          track.src     = subUrl;
+          video.appendChild(track);
+          this.subtitleTrackEl = track;
+          track.track.mode = 'hidden';
         }
       });
-      return;
-    }
-    else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari/iOS native HLS
-      video.src = url;
-      video.load();
+      this.hls.on(Hls.Events.ERROR, (_e, data) => {
+        if (!this.hls || !data.fatal) return;
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) this.hls.startLoad();
+        else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) this.hls.recoverMediaError();
+        else { this.hls.destroy(); this.hls = undefined; }
+      });
       return;
     }
 
-    console.warn('HLS not supported in this browser.');
+    if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = url;
+      video.load();
+      video.play().catch(() => {});
+    }
   }
 
   private detachLocal() {
     const video = this.playerRef?.nativeElement;
     if (!video) return;
     if (this.hls) { try { this.hls.destroy(); } catch {} this.hls = undefined; }
+    if (this.subtitleTrackEl) { try { this.subtitleTrackEl.remove(); } catch {} this.subtitleTrackEl = undefined; }
     try { video.pause(); } catch {}
     video.removeAttribute('src');
     video.load();
+    this.isPlaying  = false;
+    this.currentTime = 0;
+    this.duration    = 0;
   }
 }

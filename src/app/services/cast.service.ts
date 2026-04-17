@@ -29,8 +29,11 @@ export class CastService {
       });
       this.context = castContext;
       this.initialized = true;
-      // Optional: show mini controller in sender
-      (window as any).cast.framework.ui.setLoggerLevel((window as any).cast.framework.LoggerLevel.ERROR);
+      // Optional: set logger level if available
+      const ui = (window as any).cast?.framework?.ui;
+      if (ui?.setLoggerLevel) {
+        ui.setLoggerLevel((window as any).cast.framework.LoggerLevel.ERROR);
+      }
     });
   }
 
