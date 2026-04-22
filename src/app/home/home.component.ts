@@ -1,12 +1,21 @@
 import {
   Component, ViewChild, ElementRef,
-  OnInit, OnDestroy, signal, effect, inject, ChangeDetectorRef
+  OnInit, OnDestroy, signal, effect, inject, computed, ChangeDetectorRef
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import Hls from 'hls.js';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { MediaService, MediaItem } from '../services/media.service';
+import { MediaService, MediaItem, MediaFileNode, MediaNode } from '../services/media.service';
 import { CastService } from '../services/cast.service';
+
+type FlatNode = {
+  type: 'folder' | 'file';
+  name: string;
+  path: string;
+  level: number;
+  expanded?: boolean;
+  node?: MediaFileNode;
+};
 
 @Component({
   selector: 'app-home',
@@ -20,8 +29,11 @@ export class HomeComponent implements OnInit, OnDestroy {
   private cdr    = inject(ChangeDetectorRef);
   public  cast   = inject(CastService);
 
-  items    = toSignal(this.media.list(), { initialValue: [] as MediaItem[] });
+  tree     = toSignal(this.media.list(), { initialValue: [] as MediaNode[] });
   selected = signal<MediaItem | null>(null);
+  expandedFolders = signal(new Set<string>());
+
+  flatList = computed(() => this.flattenNodes(this.tree(), this.expandedFolders()));
 
   // UI state
   isPlaying       = false;
@@ -48,9 +60,10 @@ export class HomeComponent implements OnInit, OnDestroy {
       const sel = this.selected();
       if (!sel) return;
       if (this.cast.isConnected()) { this.detachLocal(); return; }
-      this.subtitlesAvailable = !!sel.subUrl;
+      this.subtitlesAvailable = !!(sel.subUrl || sel.embeddedSubtitles?.length);
       this.subtitlesOn = false;
-      setTimeout(() => this.loadLocal(sel.url, sel.subUrl));
+      const effectiveSub = sel.subUrl || sel.embeddedSubtitles?.[0]?.url;
+      setTimeout(() => this.loadLocal(sel.url, effectiveSub ?? undefined));
     });
 
     effect(() => {
@@ -73,8 +86,32 @@ export class HomeComponent implements OnInit, OnDestroy {
     document.removeEventListener('fullscreenchange', () => {});
   }
 
-  select(item: MediaItem) {
-    this.selected.set(item);
+  select(file: MediaFileNode) {
+    this.selected.set(this.media.toMediaItem(file));
+  }
+
+  toggleFolder(path: string) {
+    this.expandedFolders.update(set => {
+      const next = new Set(set);
+      next.has(path) ? next.delete(path) : next.add(path);
+      return next;
+    });
+  }
+
+  private flattenNodes(nodes: MediaNode[], expanded: Set<string>, level = 0): FlatNode[] {
+    const result: FlatNode[] = [];
+    for (const node of nodes) {
+      if (node.type === 'folder') {
+        const isExpanded = expanded.has(node.path);
+        result.push({ type: 'folder', name: node.name, path: node.path, level, expanded: isExpanded });
+        if (isExpanded) {
+          result.push(...this.flattenNodes(node.children, expanded, level + 1));
+        }
+      } else {
+        result.push({ type: 'file', name: node.name, path: node.path, level, node });
+      }
+    }
+    return result;
   }
 
   // ── Controls ──────────────────────────────────────────────────────────────
@@ -166,7 +203,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     this.volume  = v.volume;
   }
 
-  // ── Formatters ───────────────────────────────────────────────────────────
+  // ── Formatters ────────────────────────────────────────────────────────────
 
   formatTime(s: number): string {
     if (!s || isNaN(s)) return '0:00';
@@ -189,6 +226,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     if (!s) return;
     await this.cast.requestSession();
     await this.cast.castUrl(s.url, 'application/vnd.apple.mpegurl', s.title);
+    this.playerRef?.nativeElement.pause();
   }
 
   // ── Local HLS ─────────────────────────────────────────────────────────────
@@ -242,8 +280,5 @@ export class HomeComponent implements OnInit, OnDestroy {
     try { video.pause(); } catch {}
     video.removeAttribute('src');
     video.load();
-    this.isPlaying  = false;
-    this.currentTime = 0;
-    this.duration    = 0;
   }
 }

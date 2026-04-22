@@ -14,22 +14,33 @@
     <div class="library-label">Biblioteca</div>
 
     <ul class="media-list">
-      @for (item of items(); track item.id) {
-        <li
-          class="media-item"
-          [class.active]="selected()?.id === item.id"
-          (click)="select(item)"
-        >
-          <div class="item-thumb">
-            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-          </div>
-          <div class="item-meta">
-            <span class="item-title">{{ item.title }}</span>
-            @if (item.subUrl) {
-              <span class="item-badge">CC</span>
-            }
-          </div>
-        </li>
+      @for (flat of flatList(); track flat.path) {
+        @if (flat.type === 'folder') {
+          <li class="media-folder" [style.padding-left.px]="flat.level * 14 + 10" (click)="toggleFolder(flat.path)">
+            <span class="folder-arrow" [class.open]="flat.expanded">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+            </span>
+            <svg class="folder-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+            <span class="item-title">{{ flat.name }}</span>
+          </li>
+        } @else {
+          <li
+            class="media-item"
+            [class.active]="selected()?.url === flat.node?.url"
+            [style.padding-left.px]="flat.level * 14 + 10"
+            (click)="select(flat.node!)"
+          >
+            <div class="item-thumb">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            </div>
+            <div class="item-meta">
+              <span class="item-title">{{ flat.name }}</span>
+              @if (flat.node?.subUrl || flat.node?.embeddedSubtitles?.length) {
+                <span class="item-badge">CC</span>
+              }
+            </div>
+          </li>
+        }
       }
     </ul>
   </aside>

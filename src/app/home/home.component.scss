@@ -91,6 +91,38 @@ $font-mono:    'DM Mono', monospace;
   scrollbar-color: $text-dim transparent;
 }
 
+.media-folder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background .15s;
+  margin-bottom: 1px;
+  color: $text-muted;
+
+  &:hover { background: $bg-raised; color: $text-primary; }
+
+  .folder-arrow {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    transition: transform .2s;
+    svg { width: 14px; height: 14px; }
+    &.open { transform: rotate(90deg); }
+  }
+
+  .folder-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    color: $accent;
+  }
+
+  .item-title { font-size: 13px; font-weight: 500; }
+}
+
 .media-item {
   display: flex;
   align-items: center;
