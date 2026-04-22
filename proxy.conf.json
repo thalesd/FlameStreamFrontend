@@ -1,7 +1,7 @@
 {
-  "/api":   { "target": "http://192.168.0.109:5000", "secure": false, "changeOrigin": true },
-  "/media": { "target": "http://192.168.0.109:5000", "secure": false, "changeOrigin": true },
-  "/stream":{ "target": "http://192.168.0.109:5000", "secure": false, "changeOrigin": true },
-  "/hls":   { "target": "http://192.168.0.109:5000", "secure": false, "changeOrigin": true },
-  "/subs":  { "target": "http://192.168.0.109:5000", "secure": false, "changeOrigin": true }
+  "/api":   { "target": "http://192.168.0.50:5000", "secure": false, "changeOrigin": true },
+  "/media": { "target": "http://192.168.0.50:5000", "secure": false, "changeOrigin": true },
+  "/stream":{ "target": "http://192.168.0.50:5000", "secure": false, "changeOrigin": true },
+  "/hls":   { "target": "http://192.168.0.50:5000", "secure": false, "changeOrigin": true },
+  "/subs":  { "target": "http://192.168.0.50:5000", "secure": false, "changeOrigin": true }
 }

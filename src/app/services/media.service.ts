@@ -16,8 +16,11 @@ type BackendFile = {
 
 @Injectable({ providedIn: 'root' })
 export class MediaService {
-  //private base = environment.apiBaseUrl;
-  constructor(private http: HttpClient) {}
+  private base: string;
+
+  constructor(private http: HttpClient) {
+    this.base = environment.apiBaseUrl;
+  }
 
   list(): Observable<MediaItem[]> {
     return this.http.get<BackendFile[]>(`/api/media`).pipe(
