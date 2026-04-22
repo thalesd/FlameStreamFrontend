@@ -11,6 +11,9 @@ export type MediaItem = {
   contentType: string;
   subUrl?: string | null;
   embeddedSubtitles: EmbeddedSubtitle[];
+  duration?: number;
+  width?: number;
+  height?: number;
 };
 
 export type MediaFolder = {
@@ -27,6 +30,9 @@ export type MediaFileNode = {
   url: string;
   subUrl?: string | null;
   embeddedSubtitles: EmbeddedSubtitle[];
+  duration?: number;
+  width?: number;
+  height?: number;
 };
 
 export type MediaNode = MediaFolder | MediaFileNode;
@@ -47,6 +53,9 @@ export class MediaService {
       contentType: 'application/vnd.apple.mpegurl',
       subUrl: file.subUrl,
       embeddedSubtitles: file.embeddedSubtitles ?? [],
+      duration: file.duration,
+      width: file.width,
+      height: file.height,
     };
   }
 }

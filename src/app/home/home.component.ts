@@ -62,6 +62,8 @@ export class HomeComponent implements OnInit, OnDestroy {
       if (this.cast.isConnected()) { this.detachLocal(); return; }
       this.subtitlesAvailable = !!(sel.subUrl || sel.embeddedSubtitles?.length);
       this.subtitlesOn = false;
+      this.currentTime = 0;
+      this.duration = sel.duration ?? 0;
       const effectiveSub = sel.subUrl || sel.embeddedSubtitles?.[0]?.url;
       setTimeout(() => this.loadLocal(sel.url, effectiveSub ?? undefined));
     });
@@ -191,9 +193,11 @@ export class HomeComponent implements OnInit, OnDestroy {
   onTimeUpdate() {
     const v = this.playerRef.nativeElement;
     this.currentTime = v.currentTime;
-    this.duration    = v.duration || 0;
-    if (v.buffered.length > 0) {
-      this.buffered = (v.buffered.end(v.buffered.length - 1) / (v.duration || 1)) * 100;
+    if (!this.selected()?.duration) {
+      this.duration = isFinite(v.duration) ? v.duration : 0;
+    }
+    if (v.buffered.length > 0 && this.duration > 0) {
+      this.buffered = (v.buffered.end(v.buffered.length - 1) / this.duration) * 100;
     }
   }
 
