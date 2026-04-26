@@ -29,10 +29,23 @@ export class CastService {
       });
       this.context = castContext;
       this.initialized = true;
+      
+      // Add error listeners for session
+      castContext.addEventListener(
+        (window as any).cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
+        (e: any) => {
+          console.log('[Cast] Session state changed:', e.sessionState);
+          if (e.sessionState === (window as any).cast.framework.SessionState.SESSION_RESUMED ||
+              e.sessionState === (window as any).cast.framework.SessionState.SESSION_STARTED) {
+            this.session = castContext.getCurrentSession();
+          }
+        }
+      );
+
       // Optional: set logger level if available
       const ui = (window as any).cast?.framework?.ui;
       if (ui?.setLoggerLevel) {
-        ui.setLoggerLevel((window as any).cast.framework.LoggerLevel.ERROR);
+        ui.setLoggerLevel((window as any).cast.framework.LoggerLevel.INFO);
       }
     });
   }
@@ -56,8 +69,9 @@ export class CastService {
     if (!this.isReady()) this.init();
     const session = this.context.getCurrentSession() ?? await this.context.requestSession();
 
-    console.log(url);
     const mediaUrl = url.startsWith('http') ? url : `${CAST_MEDIA_BASE}${url}`;
+    console.log(`[Cast] Loading media: ${mediaUrl}`);
+    
     const mediaInfo = new (window as any).chrome.cast.media.MediaInfo(mediaUrl, contentType);
     const md = new (window as any).chrome.cast.media.MovieMediaMetadata();
     if (title) md.title = title;
@@ -69,9 +83,9 @@ export class CastService {
         const track = new (window as any).chrome.cast.media.Track(t.id, (window as any).chrome.cast.media.TrackType.TEXT);
         track.language = t.lang || 'und';
         track.name = t.name || t.lang;
-        track.subtype = (window as any).chrome.cast.media.TextTrackType.SUBTITLES; // or CAPTIONS
+        track.subtype = (window as any).chrome.cast.media.TextTrackType.SUBTITLES;
         track.trackContentType = 'text/vtt';
-        track.trackContentId = t.url; // absolute URL to your /hls/<hash>/sub_*.vtt
+        track.trackContentId = t.url;
         return track;
       });
       mediaInfo.textTrackStyle = new (window as any).chrome.cast.media.TextTrackStyle();
@@ -79,6 +93,13 @@ export class CastService {
 
     const request = new (window as any).chrome.cast.media.LoadRequest(mediaInfo);
     if (activeTrackId) request.activeTrackIds = [activeTrackId];
-    await session.loadMedia(request);
+
+    try {
+      await session.loadMedia(request);
+      console.log('[Cast] Media loaded successfully');
+    } catch (error) {
+      console.error('[Cast] Failed to load media:', error);
+      throw error;
+    }
   }
 }

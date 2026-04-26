@@ -47,10 +47,15 @@ export class HomeComponent implements OnInit, OnDestroy {
   subtitlesOn     = false;
   subtitlesAvailable = false;
   buffered        = 0;
+  castUseDirectFile = false;
 
   private controlsTimer: any;
+  private seekDebounce: any;
   private hls?: Hls;
   private subtitleTrackEl?: HTMLTrackElement;
+  // Offset between stream-local time (video.currentTime) and original file timeline.
+  // Non-zero when playing a seek job whose PTS is normalized to 0 by HLS.js.
+  private hlsStartOffset = 0;
 
   @ViewChild('player',    { static: false }) playerRef!:    ElementRef<HTMLVideoElement>;
   @ViewChild('container', { static: false }) containerRef!: ElementRef<HTMLDivElement>;
@@ -133,9 +138,30 @@ export class HomeComponent implements OnInit, OnDestroy {
 
   seek(e: Event) {
     if (!this.playerRef) return;
+    
+    e.preventDefault();
     const v = this.playerRef.nativeElement;
     const val = +(e.target as HTMLInputElement).value;
-    v.currentTime = val;
+
+    // Convert original-timeline value to stream-local time for buffered checks.
+    const localVal = val - this.hlsStartOffset;
+    let isBuffered = false;
+    for (let i = 0; i < v.buffered.length; i++) {
+      if (localVal >= v.buffered.start(i) - 1 && localVal <= v.buffered.end(i)) {
+        isBuffered = true;
+        break;
+      }
+    }
+
+    // If seeking to unbuffered region with HLS enabled, reload from that point
+    if (!isBuffered && this.hls) {
+      this.currentTime = val;
+      clearTimeout(this.seekDebounce);
+      this.seekDebounce = setTimeout(() => this.reloadFrom(val), 200);
+    } else {
+      // Direct seek within already-buffered content (stream-local time)
+      v.currentTime = localVal;
+    }
   }
 
   setVolume(e: Event) {
@@ -192,12 +218,12 @@ export class HomeComponent implements OnInit, OnDestroy {
 
   onTimeUpdate() {
     const v = this.playerRef.nativeElement;
-    this.currentTime = v.currentTime;
+    this.currentTime = v.currentTime + this.hlsStartOffset;
     if (!this.selected()?.duration) {
       this.duration = isFinite(v.duration) ? v.duration : 0;
     }
     if (v.buffered.length > 0 && this.duration > 0) {
-      this.buffered = (v.buffered.end(v.buffered.length - 1) / this.duration) * 100;
+      this.buffered = ((v.buffered.end(v.buffered.length - 1) + this.hlsStartOffset) / this.duration) * 100;
     }
   }
 
@@ -228,9 +254,29 @@ export class HomeComponent implements OnInit, OnDestroy {
   async castSelected() {
     const s = this.selected();
     if (!s) return;
-    await this.cast.requestSession();
-    await this.cast.castUrl(s.url, 'application/vnd.apple.mpegurl', s.title);
-    this.playerRef?.nativeElement.pause();
+    try {
+      await this.cast.requestSession();
+      console.log('[Cast] Session requested successfully');
+      let url: string;
+      let mime: string;
+      if (this.castUseDirectFile) {
+        const ext = s.directUrl.split('.').pop()?.toLowerCase() ?? '';
+        mime = ext === 'mkv' ? 'video/x-matroska'
+             : ext === 'mov' ? 'video/quicktime'
+             : ext === 'avi' ? 'video/x-msvideo'
+             : 'video/mp4';
+        url = s.directUrl;
+      } else {
+        url  = s.url;
+        mime = 'application/vnd.apple.mpegurl';
+      }
+      console.log(`[Cast] Mode: ${this.castUseDirectFile ? 'direct' : 'hls'} — ${url}`);
+      await this.cast.castUrl(url, mime, s.title);
+      console.log('[Cast] Content cast successfully');
+      this.playerRef?.nativeElement.pause();
+    } catch (error) {
+      console.error('[Cast] Error during casting:', error);
+    }
   }
 
   // ── Local HLS ─────────────────────────────────────────────────────────────
@@ -238,6 +284,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   private loadLocal(url: string, subUrl?: string) {
     if (!this.playerRef) return;
     const video = this.playerRef.nativeElement;
+    this.hlsStartOffset = 0;
     this.detachLocal();
     video.muted  = false;
     video.volume = this.volume;
@@ -260,12 +307,20 @@ export class HomeComponent implements OnInit, OnDestroy {
           track.track.mode = 'hidden';
         }
       });
-      this.hls.on(Hls.Events.ERROR, (_e, data) => {
+      // Store error handler for later removal in reloadFrom
+      const globalErrorHandler = (_e: any, data: any) => {
         if (!this.hls || !data.fatal) return;
-        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) this.hls.startLoad();
-        else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) this.hls.recoverMediaError();
-        else { this.hls.destroy(); this.hls = undefined; }
-      });
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          this.reloadFrom((this.playerRef?.nativeElement.currentTime ?? 0) + this.hlsStartOffset);
+        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          this.hls.recoverMediaError();
+        } else {
+          this.hls.destroy();
+          this.hls = undefined;
+        }
+      };
+      (this.hls as any)._globalErrorHandler = globalErrorHandler;
+      this.hls.on(Hls.Events.ERROR, globalErrorHandler);
       return;
     }
 
@@ -274,6 +329,70 @@ export class HomeComponent implements OnInit, OnDestroy {
       video.load();
       video.play().catch(() => {});
     }
+  }
+
+  private reloadFrom(t: number, retries: number = 0) {
+    const sel = this.selected();
+    if (!sel || !this.playerRef) return;
+
+    const video = this.playerRef.nativeElement;
+    const startTime = Math.max(0, t);
+    const src = `${sel.url}?start=${startTime.toString()}`;
+
+    console.log(`[Seek] Reloading from ${startTime}s (attempt ${retries + 1})`);
+
+    // HLS.js normalizes PTS to 0 for every new source. Track the offset so that
+    // onTimeUpdate, seek-buffered checks, and error retries use the correct position.
+    this.hlsStartOffset = startTime;
+
+    // Destroy the current instance entirely so no stale error handlers can cancel
+    // the new manifest request milliseconds after it's sent.
+    if (this.hls) {
+      try { this.hls.destroy(); } catch {}
+      this.hls = undefined;
+    }
+
+    if (!Hls.isSupported()) return;
+
+    this.hls = new Hls({ enableWorker: true });
+    this.hls.attachMedia(video);
+
+    const MANIFEST_TIMEOUT_MS = 35000;
+    let manifestTimeout: any;
+
+    const manifestHandler = () => {
+      clearTimeout(manifestTimeout);
+      console.log('[Seek] Manifest parsed successfully');
+      video.play().catch(() => {});
+    };
+
+    const errorHandler = (_e: any, data: any) => {
+      if (!this.hls || !data.fatal) return;
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+        clearTimeout(manifestTimeout);
+        this.reloadFrom((this.playerRef?.nativeElement.currentTime ?? 0) + this.hlsStartOffset);
+      } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+        this.hls.recoverMediaError();
+      } else {
+        this.hls.destroy();
+        this.hls = undefined;
+      }
+    };
+    (this.hls as any)._globalErrorHandler = errorHandler;
+    this.hls.on(Hls.Events.ERROR, errorHandler);
+
+    this.hls.on(Hls.Events.MEDIA_ATTACHED, () => this.hls!.loadSource(src));
+    this.hls.once(Hls.Events.MANIFEST_PARSED, manifestHandler);
+
+    manifestTimeout = setTimeout(() => {
+      if (this.hls) this.hls.off(Hls.Events.MANIFEST_PARSED, manifestHandler);
+      console.warn('[Seek] Manifest parsing timeout after', MANIFEST_TIMEOUT_MS, 'ms');
+      if (retries < 1) {
+        this.reloadFrom(t, retries + 1);
+      } else {
+        console.error('[Seek] Giving up after retries');
+      }
+    }, MANIFEST_TIMEOUT_MS);
   }
 
   private detachLocal() {

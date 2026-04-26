@@ -1,10 +1,4 @@
 {
   "permissions": {
-    "allow": [
-      "Bash(mkcert --version)",
-      "Bash(openssl version *)",
-      "Bash(mkcert -install)",
-      "Bash(mkcert -cert-file certs/cert.pem -key-file certs/key.pem 192.168.0.109 localhost 127.0.0.1)"
-    ]
   }
 }

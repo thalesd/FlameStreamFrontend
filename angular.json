@@ -60,6 +60,11 @@
         },
         "serve": {
           "builder": "@angular/build:dev-server",
+          "options": {
+            "ssl": true,
+            "sslCert": "C:/Users/Thales/AppData/Local/Posh-ACME/LE_PROD/3275644921/flamestream.tdonsoft.com/fullchain.cer",
+            "sslKey": "C:/Users/Thales/AppData/Local/Posh-ACME/LE_PROD/3275644921/flamestream.tdonsoft.com/cert.key"
+          },
           "configurations": {
             "production": {
               "buildTarget": "FlameStreamFrontend:build:production"
