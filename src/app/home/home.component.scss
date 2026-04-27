@@ -258,14 +258,23 @@ $font-mono:    'DM Mono', monospace;
   object-fit: contain;
   display: block;
 
-  // Subtítulos nativos — estilo por cima do browser default
+  // Subtítulos nativos — white text with black outline on transparent background
   &::cue {
     font-family: $font-ui;
     font-size: 1.1em;
     color: #fff;
-    background: rgba(0, 0, 0, .65);
-    border-radius: 3px;
-    padding: .1em .35em;
+    background: transparent;
+    text-shadow: 
+      -2px -2px 0 #000,
+       2px -2px 0 #000,
+      -2px  2px 0 #000,
+       2px  2px 0 #000,
+       0  -2px 0 #000,
+       0   2px 0 #000,
+      -2px  0  0 #000,
+       2px  0  0 #000;
+    line-height: 1.4;
+    white-space: normal;
   }
 }
 
@@ -292,6 +301,7 @@ $font-mono:    'DM Mono', monospace;
   position: absolute;
   bottom: 0;
   left: 0;
+  z-index: 2;
   right: 0;
   padding: 48px 20px 18px;
   background: linear-gradient(to top, rgba(0,0,0,.88) 0%, transparent 100%);
@@ -462,6 +472,66 @@ $font-mono:    'DM Mono', monospace;
 
   svg { width: 16px; height: 16px; }
   &:hover { color: $text-primary; background: rgba(255,255,255,.06); }
+}
+
+// ── Cast overlay ─────────────────────────────────────────────────────────────
+.cast-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(0, 0, 0, .82);
+  cursor: pointer;
+
+  .cast-overlay-icon {
+    width: 56px;
+    height: 56px;
+    color: #1db954;
+    opacity: .9;
+  }
+  .cast-overlay-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: rgba(255,255,255,.9);
+    max-width: 80%;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cast-overlay-sub {
+    font-size: 12px;
+    color: rgba(255,255,255,.45);
+    letter-spacing: .03em;
+  }
+}
+
+// ── Subtitle track picker ─────────────────────────────────────────────────────
+.track-picker {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-right: 4px;
+
+  .track-btn {
+    padding: 2px 7px;
+    border-radius: 4px;
+    border: 1px solid rgba(255,255,255,.2);
+    background: transparent;
+    color: rgba(255,255,255,.55);
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: background .15s, color .15s, border-color .15s;
+
+    &:hover  { background: rgba(255,255,255,.1); color: rgba(255,255,255,.9); }
+    &.active { background: #1db954; border-color: #1db954; color: #fff; }
+  }
 }
 
 // ── Fullscreen ────────────────────────────────────────────────────────────────

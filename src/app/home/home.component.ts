@@ -33,7 +33,20 @@ export class HomeComponent implements OnInit, OnDestroy {
   selected = signal<MediaItem | null>(null);
   expandedFolders = signal(new Set<string>());
 
-  flatList = computed(() => this.flattenNodes(this.tree(), this.expandedFolders()));
+  flatList   = computed(() => this.flattenNodes(this.tree(), this.expandedFolders()));
+  castTracks = computed(() => {
+    const s = this.selected();
+    if (!s) return [];
+    const tracks: Array<{ id: number; lang: string; name: string; url: string }> = [];
+    if (s.subUrl) tracks.push({ id: 1, lang: 'pt', name: 'Legendas', url: s.subUrl });
+    s.embeddedSubtitles.forEach((sub, i) => tracks.push({
+      id:   i + (s.subUrl ? 2 : 1),
+      lang: sub.language || 'und',
+      name: sub.title    || sub.language || `Track ${i + 1}`,
+      url:  sub.url,
+    }));
+    return tracks;
+  });
 
   // UI state
   isPlaying       = false;
@@ -47,20 +60,21 @@ export class HomeComponent implements OnInit, OnDestroy {
   subtitlesOn     = false;
   subtitlesAvailable = false;
   buffered        = 0;
-  castUseDirectFile = false;
+  castUseDirectFile  = false;
+  castActiveTrackId  = signal<number | null>(null);
 
   private controlsTimer: any;
   private seekDebounce: any;
   private hls?: Hls;
   private subtitleTrackEl?: HTMLTrackElement;
   // Offset between stream-local time (video.currentTime) and original file timeline.
-  // Non-zero when playing a seek job whose PTS is normalized to 0 by HLS.js.
   private hlsStartOffset = 0;
 
   @ViewChild('player',    { static: false }) playerRef!:    ElementRef<HTMLVideoElement>;
   @ViewChild('container', { static: false }) containerRef!: ElementRef<HTMLDivElement>;
 
   constructor() {
+    // Load locally when a file is selected and cast is not active
     effect(() => {
       const sel = this.selected();
       if (!sel) return;
@@ -73,8 +87,15 @@ export class HomeComponent implements OnInit, OnDestroy {
       setTimeout(() => this.loadLocal(sel.url, effectiveSub ?? undefined));
     });
 
+    // Detach local player when cast connects
     effect(() => {
       if (this.cast.isConnected()) this.detachLocal();
+    });
+
+    // Default subtitle track to first available when selection changes
+    effect(() => {
+      const tracks = this.castTracks();
+      this.castActiveTrackId.set(tracks.length > 0 ? tracks[0].id : null);
     });
   }
 
@@ -124,12 +145,18 @@ export class HomeComponent implements OnInit, OnDestroy {
   // ── Controls ──────────────────────────────────────────────────────────────
 
   togglePlay() {
+    if (this.cast.isConnected()) { this.cast.togglePlay(); return; }
     if (!this.playerRef) return;
     const v = this.playerRef.nativeElement;
     v.paused ? v.play() : v.pause();
   }
 
   toggleMute() {
+    if (this.cast.isConnected()) {
+      this.isMuted = !this.isMuted;
+      this.cast.setMuted(this.isMuted);
+      return;
+    }
     if (!this.playerRef) return;
     const v = this.playerRef.nativeElement;
     v.muted = !v.muted;
@@ -137,11 +164,17 @@ export class HomeComponent implements OnInit, OnDestroy {
   }
 
   seek(e: Event) {
-    if (!this.playerRef) return;
-    
     e.preventDefault();
-    const v = this.playerRef.nativeElement;
     const val = +(e.target as HTMLInputElement).value;
+
+    if (this.cast.isConnected()) {
+      this.currentTime = val;
+      this.cast.seek(val);
+      return;
+    }
+
+    if (!this.playerRef) return;
+    const v = this.playerRef.nativeElement;
 
     // Convert original-timeline value to stream-local time for buffered checks.
     const localVal = val - this.hlsStartOffset;
@@ -153,27 +186,32 @@ export class HomeComponent implements OnInit, OnDestroy {
       }
     }
 
-    // If seeking to unbuffered region with HLS enabled, reload from that point
     if (!isBuffered && this.hls) {
       this.currentTime = val;
       clearTimeout(this.seekDebounce);
       this.seekDebounce = setTimeout(() => this.reloadFrom(val), 200);
     } else {
-      // Direct seek within already-buffered content (stream-local time)
       v.currentTime = localVal;
     }
   }
 
   setVolume(e: Event) {
+    const val = +(e.target as HTMLInputElement).value;
+    this.volume  = val;
+    this.isMuted = val === 0;
+    if (this.cast.isConnected()) { this.cast.setVolume(val); return; }
     if (!this.playerRef) return;
     const v = this.playerRef.nativeElement;
-    const val = +(e.target as HTMLInputElement).value;
     v.volume = val;
-    this.volume = val;
-    this.isMuted = val === 0;
   }
 
   skip(sec: number) {
+    if (this.cast.isConnected()) {
+      const t = this.cast.castCurrentTime();
+      const dur = this.cast.castDuration() || this.duration;
+      this.cast.seek(Math.max(0, Math.min(dur, t + sec)));
+      return;
+    }
     if (!this.playerRef) return;
     const v = this.playerRef.nativeElement;
     v.currentTime = Math.max(0, Math.min(v.duration || 0, v.currentTime + sec));
@@ -181,12 +219,25 @@ export class HomeComponent implements OnInit, OnDestroy {
 
   toggleSubtitles() {
     this.subtitlesOn = !this.subtitlesOn;
+    console.log(`[Subtitles] Toggle: ${this.subtitlesOn ? 'ON' : 'OFF'}`);
+    
     if (this.hls && this.hls.subtitleTracks.length > 0) {
+      console.log(`[Subtitles] Found ${this.hls.subtitleTracks.length} HLS subtitle track(s)`);
       this.hls.subtitleTrack = this.subtitlesOn ? 0 : -1;
     }
+    
     if (this.subtitleTrackEl) {
-      this.subtitleTrackEl.track.mode = this.subtitlesOn ? 'showing' : 'hidden';
+      const newMode = this.subtitlesOn ? 'showing' : 'hidden';
+      this.subtitleTrackEl.track.mode = newMode;
+      console.log(`[Subtitles] Native track mode set to: ${newMode}`);
+    } else {
+      console.log('[Subtitles] No native track element found');
     }
+  }
+
+  setCastTrack(id: number | null) {
+    this.castActiveTrackId.set(id);
+    if (this.cast.isConnected()) this.cast.activateTrack(id);
   }
 
   toggleFullscreen() {
@@ -257,6 +308,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     try {
       await this.cast.requestSession();
       console.log('[Cast] Session requested successfully');
+
       let url: string;
       let mime: string;
       if (this.castUseDirectFile) {
@@ -270,8 +322,15 @@ export class HomeComponent implements OnInit, OnDestroy {
         url  = s.url;
         mime = 'application/vnd.apple.mpegurl';
       }
-      console.log(`[Cast] Mode: ${this.castUseDirectFile ? 'direct' : 'hls'} — ${url}`);
-      await this.cast.castUrl(url, mime, s.title);
+
+      const tracks  = this.castTracks();
+      const trackId = this.castActiveTrackId();
+      console.log(`[Cast] Mode: ${this.castUseDirectFile ? 'direct' : 'hls'} — ${url} — ${tracks.length} subtitle track(s)`);
+      await this.cast.castUrl(
+        url, mime, s.title, undefined,
+        tracks.length ? tracks : undefined,
+        trackId ?? undefined
+      );
       console.log('[Cast] Content cast successfully');
       this.playerRef?.nativeElement.pause();
     } catch (error) {
@@ -302,12 +361,23 @@ export class HomeComponent implements OnInit, OnDestroy {
           track.label   = 'Legendas';
           track.srclang = 'pt';
           track.src     = subUrl;
+          
+          // Log when track loads successfully
+          track.addEventListener('load', () => {
+            console.log('[Subtitles] Track loaded successfully');
+          });
+          
+          // Log track errors
+          track.addEventListener('error', (e: any) => {
+            console.error('[Subtitles] Failed to load track:', e);
+          });
+          
           video.appendChild(track);
           this.subtitleTrackEl = track;
           track.track.mode = 'hidden';
+          console.log(`[Subtitles] Track added from: ${subUrl}`);
         }
       });
-      // Store error handler for later removal in reloadFrom
       const globalErrorHandler = (_e: any, data: any) => {
         if (!this.hls || !data.fatal) return;
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
@@ -345,8 +415,6 @@ export class HomeComponent implements OnInit, OnDestroy {
     // onTimeUpdate, seek-buffered checks, and error retries use the correct position.
     this.hlsStartOffset = startTime;
 
-    // Destroy the current instance entirely so no stale error handlers can cancel
-    // the new manifest request milliseconds after it's sent.
     if (this.hls) {
       try { this.hls.destroy(); } catch {}
       this.hls = undefined;
