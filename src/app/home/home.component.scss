@@ -1,20 +1,22 @@
 // ── Tokens ────────────────────────────────────────────────────────────────────
-$bg-base:      #0b0c10;
-$bg-surface:   #13151c;
-$bg-raised:    #1a1d28;
-$border:       rgba(255,255,255,.07);
-$accent:       #e5432e;
-$accent-glow:  rgba(229,67,46,.35);
-$text-primary: #f0f0ef;
-$text-muted:   #6e7080;
-$text-dim:     #3a3c4a;
-$ctrl-size:    36px;
-$sidebar-w:    300px;
-$font-ui:      'DM Sans', system-ui, sans-serif;
-$font-mono:    'DM Mono', monospace;
+$bg-base:       #0b0e14;
+$bg-surface:    #12161f;
+$bg-raised:     #1a2030;
+$border:        rgba(255,255,255,.07);
 
-// ── Google Fonts ─────────────────────────────────────────────────────────────
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+$accent:        #3d8bff;   // primary blue — progress fill/thumb/glow, play button, active states, folder icons
+$accent-glow:   rgba(61,139,255,.35);
+
+$accent-2:      #ff8a3d;   // secondary orange — CC badge, Cast-active state, job-tracker bars, pre-process "in progress"
+$accent-2-glow: rgba(255,138,61,.35);
+
+$text-primary:  #f0f2f5;
+$text-muted:    #7d8494;
+$text-dim:      #3d4356;
+$ctrl-size:     36px;
+$sidebar-w:     300px;
+$font-ui:       'DM Sans', system-ui, sans-serif;
+$font-mono:     'DM Mono', monospace;
 
 // ── Reset & base ──────────────────────────────────────────────────────────────
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -71,6 +73,111 @@ $font-mono:    'DM Mono', monospace;
   font-weight: 600;
   letter-spacing: -.2px;
   color: $text-primary;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+// ── Processing tracker popup ──────────────────────────────────────────────────
+.tracker-wrap {
+  position: relative;
+
+}
+
+.tracker-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: $accent-2;
+  box-shadow: 0 0 0 2px $bg-surface;
+}
+
+// position: fixed (not absolute) so this escapes .sidebar's overflow:hidden (needed for
+// its collapse slide animation) — coordinates are computed in the component from the
+// tracker button's on-screen position, since fixed offsets can't be expressed relative
+// to an ancestor in CSS alone.
+.tracker-popup {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  position: fixed;
+  z-index: 20;
+  width: 260px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 12px;
+  border-radius: 10px;
+  background: $bg-raised;
+  border: 1px solid $border;
+  box-shadow: 0 8px 30px rgba(0,0,0,.5);
+}
+
+.tracker-empty {
+  font-size: 12px;
+  color: $text-muted;
+  padding: 4px 2px;
+}
+
+.tracker-job {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tracker-job-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+
+  .tracker-job-title {
+    font-size: 12px;
+    color: $text-primary;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tracker-job-type {
+    flex-shrink: 0;
+    font-size: 10px;
+    text-transform: uppercase;
+    color: $text-muted;
+  }
+}
+
+.tracker-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255,255,255,.08);
+  overflow: hidden;
+}
+.tracker-progress-fill {
+  height: 100%;
+  background: $accent-2;
+}
+
+.tracker-job-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  span { font-size: 11px; color: $text-muted; }
+
+  .tracker-cancel {
+    font-size: 11px;
+    color: $text-muted;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    &:hover { color: $accent-2; }
+  }
 }
 
 .library-label {
@@ -181,13 +288,55 @@ $font-mono:    'DM Mono', monospace;
   font-size: 10px;
   font-weight: 500;
   letter-spacing: .04em;
-  color: rgba($accent, .9);
-  background: rgba($accent, .1);
-  border: 1px solid rgba($accent, .25);
+  color: rgba($accent-2, .9);
+  background: rgba($accent-2, .1);
+  border: 1px solid rgba($accent-2, .25);
   border-radius: 4px;
   padding: 1px 5px;
   align-self: flex-start;
 }
+
+// ── Per-row actions (pre-process / free space) ────────────────────────────────
+.item-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.item-action-btn {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: $text-dim;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .15s, color .15s, background .15s;
+
+  svg { width: 14px; height: 14px; }
+  &:hover { color: $accent; background: rgba(255,255,255,.06); }
+  &.disabled { pointer-events: none; opacity: 0 !important; }
+}
+
+.media-item:hover .item-action-btn { opacity: 1; }
+
+.item-ready, .item-processing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  svg { width: 14px; height: 14px; }
+}
+.item-ready { color: $accent; opacity: .55; }
+.item-processing { color: $accent-2; }
+.item-spinner { animation: seek-spin .9s linear infinite; }
 
 // ── Stage (main) ──────────────────────────────────────────────────────────────
 .stage {
@@ -231,6 +380,112 @@ $font-mono:    'DM Mono', monospace;
 }
 .empty-icon { font-size: 48px; opacity: .4; }
 .empty-state p { font-size: 14px; }
+
+// ── Continue watching shelf ────────────────────────────────────────────────────
+.continue-watching {
+  width: 100%;
+  max-width: 720px;
+  margin-bottom: 8px;
+  user-select: none;
+}
+.continue-watching-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: $text-muted;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-bottom: 10px;
+  text-align: left;
+}
+.continue-watching-row {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+.continue-watching-tile {
+  flex: 0 0 auto;
+  width: 140px;
+  cursor: pointer;
+
+  .cw-thumb {
+    position: relative;
+    width: 140px;
+    height: 84px;
+    border-radius: 8px;
+    background: $bg-raised;
+    border: 1px solid $border;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba($accent, .8);
+    overflow: hidden;
+
+    svg { width: 28px; height: 28px; }
+  }
+  .cw-progress {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 3px;
+    background: rgba(255,255,255,.15);
+  }
+  .cw-progress-fill {
+    height: 100%;
+    background: $accent-2;
+  }
+  .cw-title {
+    display: block;
+    margin-top: 6px;
+    font-size: 12px;
+    color: $text-primary;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &:hover .cw-thumb { border-color: rgba($accent, .4); }
+}
+
+// ── Resume banner ──────────────────────────────────────────────────────────────
+.resume-banner {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px 10px 16px;
+  border-radius: 8px;
+  background: rgba(18, 22, 31, .92);
+  border: 1px solid rgba(255,255,255,.1);
+  box-shadow: 0 4px 20px rgba(0,0,0,.4);
+
+  span { font-size: 13px; color: $text-primary; }
+
+  .resume-btn {
+    padding: 5px 14px;
+    border-radius: 6px;
+    border: none;
+    background: $accent;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    &:hover { filter: brightness(1.1); }
+  }
+  .resume-dismiss {
+    display: flex;
+    background: none;
+    border: none;
+    color: $text-muted;
+    cursor: pointer;
+    padding: 2px;
+    svg { width: 16px; height: 16px; }
+    &:hover { color: $text-primary; }
+  }
+}
 
 // ── Player container ──────────────────────────────────────────────────────────
 .player-container {
@@ -404,6 +659,8 @@ $font-mono:    'DM Mono', monospace;
 
   &:hover { color: $text-primary; background: rgba(255,255,255,.08); }
 
+  .cast-active { color: $accent-2; }
+
   &.play-btn {
     width: 42px;
     height: 42px;
@@ -490,7 +747,7 @@ $font-mono:    'DM Mono', monospace;
   .cast-overlay-icon {
     width: 56px;
     height: 56px;
-    color: #1db954;
+    color: $accent-2;
     opacity: .9;
   }
   .cast-overlay-title {
@@ -508,6 +765,50 @@ $font-mono:    'DM Mono', monospace;
     color: rgba(255,255,255,.45);
     letter-spacing: .03em;
   }
+}
+
+// ── Seek processing overlay ───────────────────────────────────────────────────
+.seek-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: rgba(0, 0, 0, .6);
+
+  .seek-spinner {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 3px solid rgba($accent, .25);
+    border-top-color: $accent;
+    animation: seek-spin .8s linear infinite;
+  }
+  .seek-overlay-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: rgba(255,255,255,.9);
+    max-width: 80%;
+    text-align: center;
+  }
+  .seek-retry-btn {
+    padding: 6px 16px;
+    border-radius: 6px;
+    border: 1px solid $accent;
+    background: transparent;
+    color: $accent;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    &:hover { background: rgba($accent, .12); }
+  }
+}
+
+@keyframes seek-spin {
+  to { transform: rotate(360deg); }
 }
 
 // ── Subtitle track picker ─────────────────────────────────────────────────────
@@ -530,7 +831,7 @@ $font-mono:    'DM Mono', monospace;
     transition: background .15s, color .15s, border-color .15s;
 
     &:hover  { background: rgba(255,255,255,.1); color: rgba(255,255,255,.9); }
-    &.active { background: #1db954; border-color: #1db954; color: #fff; }
+    &.active { background: $accent-2; border-color: $accent-2; color: #fff; }
   }
 }
 

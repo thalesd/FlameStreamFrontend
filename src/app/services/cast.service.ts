@@ -1,5 +1,5 @@
 import { Injectable, NgZone, signal } from '@angular/core';
-import { CAST_MEDIA_BASE } from '../../../env-cast';
+import { CAST_MEDIA_BASE, RECEIVER_APP_ID } from '../../../env-cast';
 
 @Injectable({ providedIn: 'root' })
 export class CastService {
@@ -32,7 +32,7 @@ export class CastService {
       const castContext = (window as any).cast.framework.CastContext.getInstance();
       castContext.setOptions({
         autoJoinPolicy: (window as any).chrome.cast.AutoJoinPolicy.TAB_AND_ORIGIN_SCOPED,
-        receiverApplicationId: (window as any).chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+        receiverApplicationId: RECEIVER_APP_ID,
       });
       this.context = castContext;
       this.initialized = true;

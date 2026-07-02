@@ -1,12 +1,13 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, firstValueFrom } from 'rxjs';
 import { BACKEND_BASE } from '../../../env-cast';
 
 export type EmbeddedSubtitle = { url: string; language: string; title: string; codec: string; };
 
 export type MediaItem = {
   id: string;
+  path: string;
   title: string;
   url: string;
   directUrl: string;
@@ -36,6 +37,8 @@ export type MediaFileNode = {
   duration?: number;
   width?: number;
   height?: number;
+  ready?: boolean;
+  cachedBytes?: number;
 };
 
 export type MediaNode = MediaFolder | MediaFileNode;
@@ -48,9 +51,22 @@ export class MediaService {
     return this.http.get<MediaNode[]>(`${BACKEND_BASE}/api/media`);
   }
 
+  async preprocess(path: string): Promise<void> {
+    await firstValueFrom(
+      this.http.post(`${BACKEND_BASE}/api/preprocess?path=${encodeURIComponent(path)}`, {})
+    );
+  }
+
+  async deleteCache(path: string): Promise<void> {
+    await firstValueFrom(
+      this.http.post(`${BACKEND_BASE}/api/cache/delete?path=${encodeURIComponent(path)}`, {})
+    );
+  }
+
   toMediaItem(file: MediaFileNode): MediaItem {
     return {
       id: encodeURIComponent(file.path),
+      path: file.path,
       title: file.name,
       url: `${BACKEND_BASE}${file.url}`,
       directUrl: `${BACKEND_BASE}${file.directUrl}`,

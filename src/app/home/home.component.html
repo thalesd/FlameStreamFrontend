@@ -4,11 +4,46 @@
   <aside class="sidebar" [class.collapsed]="!showSidebar">
     <div class="sidebar-header">
       <span class="logo">🔥 FlameStream</span>
-      <button class="icon-btn" (click)="showSidebar = false" title="Fechar">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M18 6L6 18M6 6l12 12"/>
-        </svg>
-      </button>
+      <div class="header-actions">
+        <div class="tracker-wrap" (mouseenter)="onTrackerEnter($event)" (mouseleave)="onTrackerLeave()">
+          <button class="icon-btn" title="Processamento em andamento">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 20V10M18 20V4M6 20v-4"/>
+            </svg>
+            @if (tracker.jobs().length) {
+              <span class="tracker-dot"></span>
+            }
+          </button>
+          @if (trackerPopupPos(); as pos) {
+            <div class="tracker-popup" [style.top.px]="pos.top" [style.left.px]="pos.left">
+              @if (!tracker.jobs().length) {
+                <div class="tracker-empty">Nenhum processamento ativo</div>
+              } @else {
+                @for (job of tracker.jobs(); track job.key) {
+                  <div class="tracker-job">
+                    <div class="tracker-job-header">
+                      <span class="tracker-job-title">{{ fileNameFor(job.path) }}</span>
+                      <span class="tracker-job-type">{{ job.jobType === 'main' ? 'completo' : 'seek' }}</span>
+                    </div>
+                    <div class="tracker-progress">
+                      <div class="tracker-progress-fill" [style.width.%]="job.percentComplete"></div>
+                    </div>
+                    <div class="tracker-job-footer">
+                      <span>{{ job.percentComplete.toFixed(0) }}% · {{ formatTime(job.elapsedSeconds) }}</span>
+                      <button class="tracker-cancel" (click)="tracker.cancel(job.key)">Cancelar</button>
+                    </div>
+                  </div>
+                }
+              }
+            </div>
+          }
+        </div>
+        <button class="icon-btn" (click)="showSidebar = false" title="Fechar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6L6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
     </div>
 
     <div class="library-label">Biblioteca</div>
@@ -39,6 +74,31 @@
                 <span class="item-badge">CC</span>
               }
             </div>
+            <div class="item-actions">
+              @if (jobForPath(flat.node!.path); as job) {
+                <span class="item-processing" [title]="job.percentComplete.toFixed(0) + '%'">
+                  <svg class="item-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="9"/></svg>
+                </span>
+              } @else if (flat.node?.ready) {
+                <span class="item-ready" title="Já processado">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg>
+                </span>
+              } @else {
+                <button class="item-action-btn" (click)="preprocessFile(flat.node!, $event)" title="Pré-processar">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                </button>
+              }
+              @if ((flat.node?.cachedBytes ?? 0) > 0) {
+                <button
+                  class="item-action-btn"
+                  [class.disabled]="selected()?.path === flat.node?.path"
+                  (click)="deleteCache(flat.node!, $event)"
+                  [title]="'Liberar ' + formatBytes(flat.node!.cachedBytes ?? 0)"
+                >
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                </button>
+              }
+            </div>
           </li>
         }
       }
@@ -62,6 +122,27 @@
 
     @if (!selected()) {
       <div class="empty-state">
+        @if (continueWatchingItems().length) {
+          <div class="continue-watching">
+            <div class="continue-watching-label">Continuar assistindo</div>
+            <div class="continue-watching-row">
+              @for (item of continueWatchingItems(); track item.file.path) {
+                <div class="continue-watching-tile" (click)="openContinueWatching(item)">
+                  <div class="cw-thumb">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                    <div class="cw-progress">
+                      <div
+                        class="cw-progress-fill"
+                        [style.width.%]="item.entry.durationSeconds ? (item.entry.positionSeconds / item.entry.durationSeconds) * 100 : 0"
+                      ></div>
+                    </div>
+                  </div>
+                  <span class="cw-title">{{ item.file.name }}</span>
+                </div>
+              }
+            </div>
+          </div>
+        }
         <div class="empty-icon">🎬</div>
         <p>Selecione um título para começar</p>
       </div>
@@ -110,6 +191,30 @@
         @if (!cast.connected()) {
           <div class="title-overlay">
             <span>{{ selected()?.title }}</span>
+          </div>
+        }
+
+        <!-- Banner de retomada — exibido quando há progresso salvo para este título -->
+        @if (!cast.connected() && resumeInfo()) {
+          <div class="resume-banner">
+            <span>Continuar de {{ resumeInfo()!.label }}?</span>
+            <button class="resume-btn" (click)="resumeFromHistory()">Continuar</button>
+            <button class="resume-dismiss" (click)="dismissResume()" title="Dispensar">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+        }
+
+        <!-- Overlay de processamento — exibido enquanto um seek aguarda o backend gerar o trecho -->
+        @if (!cast.connected() && (seekProcessing() || seekError())) {
+          <div class="seek-overlay">
+            @if (seekProcessing()) {
+              <div class="seek-spinner"></div>
+              <span class="seek-overlay-title">Processando…</span>
+            } @else if (seekError()) {
+              <span class="seek-overlay-title">{{ seekError() }}</span>
+              <button class="seek-retry-btn" (click)="retrySeek()">Tentar novamente</button>
+            }
           </div>
         }
 
@@ -222,7 +327,7 @@
 
               <!-- Cast button -->
               <button class="ctrl-btn" (click)="castSelected()" [title]="'Cast (' + (castUseDirectFile ? 'direct' : 'HLS') + ')'">
-                <svg viewBox="0 0 24 24" fill="currentColor" [style.color]="cast.connected() ? '#1db954' : 'inherit'">
+                <svg viewBox="0 0 24 24" fill="currentColor" [class.cast-active]="cast.connected()">
                   <path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm18-7H5v1.63c3.96 1.28 7.09 4.41 8.37 8.37H19V7zM1 10v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3C1.9 3 1 3.9 1 5v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/>
                 </svg>
               </button>

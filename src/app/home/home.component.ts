@@ -7,6 +7,8 @@ import Hls from 'hls.js';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { MediaService, MediaItem, MediaFileNode, MediaNode } from '../services/media.service';
 import { CastService } from '../services/cast.service';
+import { WatchHistoryService, WatchHistoryEntry } from '../services/watch-history.service';
+import { ProcessingTrackerService } from '../services/processing-tracker.service';
 
 type FlatNode = {
   type: 'folder' | 'file';
@@ -25,13 +27,20 @@ type FlatNode = {
   styleUrls: ['./home.component.scss']
 })
 export class HomeComponent implements OnInit, OnDestroy {
-  private media = inject(MediaService);
-  private cdr    = inject(ChangeDetectorRef);
-  public  cast   = inject(CastService);
+  private media        = inject(MediaService);
+  private cdr          = inject(ChangeDetectorRef);
+  private watchHistory = inject(WatchHistoryService);
+  public  cast         = inject(CastService);
+  public  tracker      = inject(ProcessingTrackerService);
+  private trackerUnsubscribe?: () => void;
 
   tree     = toSignal(this.media.list(), { initialValue: [] as MediaNode[] });
   selected = signal<MediaItem | null>(null);
   expandedFolders = signal(new Set<string>());
+
+  resumeInfo = signal<{ position: number; label: string } | null>(null);
+  continueWatchingItems = signal<Array<{ file: MediaFileNode; entry: WatchHistoryEntry }>>([]);
+  private pendingAutoResume = false;
 
   flatList   = computed(() => this.flattenNodes(this.tree(), this.expandedFolders()));
   castTracks = computed(() => {
@@ -67,8 +76,12 @@ export class HomeComponent implements OnInit, OnDestroy {
   private seekDebounce: any;
   private hls?: Hls;
   private subtitleTrackEl?: HTMLTrackElement;
+  private currentSubUrl?: string;
   // Offset between stream-local time (video.currentTime) and original file timeline.
   private hlsStartOffset = 0;
+  private lastSeekTarget = 0;
+  seekProcessing = signal(false);
+  seekError      = signal<string | null>(null);
 
   @ViewChild('player',    { static: false }) playerRef!:    ElementRef<HTMLVideoElement>;
   @ViewChild('container', { static: false }) containerRef!: ElementRef<HTMLDivElement>;
@@ -83,8 +96,10 @@ export class HomeComponent implements OnInit, OnDestroy {
       this.subtitlesOn = false;
       this.currentTime = 0;
       this.duration = sel.duration ?? 0;
+      this.resumeInfo.set(null);
       const effectiveSub = sel.subUrl || sel.embeddedSubtitles?.[0]?.url;
       setTimeout(() => this.loadLocal(sel.url, effectiveSub ?? undefined));
+      this.checkResume(sel);
     });
 
     // Detach local player when cast connects
@@ -97,7 +112,15 @@ export class HomeComponent implements OnInit, OnDestroy {
       const tracks = this.castTracks();
       this.castActiveTrackId.set(tracks.length > 0 ? tracks[0].id : null);
     });
+
+    // Refresh the Continue Watching shelf once the library tree is available
+    effect(() => {
+      if (this.tree().length > 0) this.loadContinueWatching();
+    });
   }
+
+  private watchHistoryTimer: any;
+  private beforeUnloadHandler = () => this.saveWatchProgress();
 
   ngOnInit() {
     this.cast.init();
@@ -106,16 +129,132 @@ export class HomeComponent implements OnInit, OnDestroy {
       this.isFullscreen = !!document.fullscreenElement;
       this.cdr.detectChanges();
     });
+
+    this.watchHistoryTimer = setInterval(() => this.saveWatchProgress(), 8000);
+    window.addEventListener('beforeunload', this.beforeUnloadHandler);
+    this.trackerUnsubscribe = this.tracker.subscribe();
   }
 
   ngOnDestroy() {
+    this.saveWatchProgress();
     this.detachLocal();
     clearTimeout(this.controlsTimer);
+    clearInterval(this.watchHistoryTimer);
+    window.removeEventListener('beforeunload', this.beforeUnloadHandler);
     document.removeEventListener('fullscreenchange', () => {});
+    this.trackerUnsubscribe?.();
   }
 
-  select(file: MediaFileNode) {
+  fileNameFor(path: string): string {
+    return this.allFileNodes().find(f => f.path === path)?.name ?? path;
+  }
+
+  trackerPopupPos = signal<{ top: number; left: number } | null>(null);
+
+  onTrackerEnter(e: MouseEvent) {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    this.trackerPopupPos.set({ top: rect.bottom + 8, left: rect.left });
+  }
+
+  onTrackerLeave() {
+    this.trackerPopupPos.set(null);
+  }
+
+  jobForPath(path: string) {
+    return this.tracker.jobs().find(j => j.path === path && j.jobType === 'main');
+  }
+
+  async preprocessFile(node: MediaFileNode, e: Event) {
+    e.stopPropagation();
+    await this.media.preprocess(node.path);
+  }
+
+  async deleteCache(node: MediaFileNode, e: Event) {
+    e.stopPropagation();
+    if (this.selected()?.path === node.path) return; // don't pull the rug out from under active playback
+    if (!confirm(`Liberar ${this.formatBytes(node.cachedBytes ?? 0)} excluindo o processamento salvo de "${node.name}"?`)) return;
+    await this.media.deleteCache(node.path);
+    node.ready = false;
+    node.cachedBytes = 0;
+  }
+
+  formatBytes(bytes: number): string {
+    if (!bytes) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let value = bytes, i = 0;
+    while (value >= 1024 && i < units.length - 1) { value /= 1024; i++; }
+    return `${value.toFixed(i > 0 && value < 10 ? 1 : 0)} ${units[i]}`;
+  }
+
+  select(file: MediaFileNode, autoResume: boolean = false) {
+    this.pendingAutoResume = autoResume;
     this.selected.set(this.media.toMediaItem(file));
+  }
+
+  openContinueWatching(item: { file: MediaFileNode; entry: WatchHistoryEntry }) {
+    this.select(item.file, true);
+  }
+
+  // ── Watch history / resume ───────────────────────────────────────────────────
+
+  private saveWatchProgress() {
+    const sel = this.selected();
+    if (!sel) return;
+    const isCasting = this.cast.isConnected();
+    const position  = isCasting ? this.cast.castCurrentTime() : this.currentTime;
+    const duration  = (isCasting ? this.cast.castDuration() : 0) || this.duration || sel.duration || 0;
+    if (!position || position <= 0) return;
+    this.watchHistory.save(sel.path, position, duration);
+  }
+
+  private async checkResume(sel: MediaItem) {
+    const autoResume = this.pendingAutoResume;
+    this.pendingAutoResume = false;
+
+    const entry = await this.watchHistory.get(sel.path);
+    if (this.selected()?.path !== sel.path) return; // selection changed while awaiting
+
+    const dur = entry?.durationSeconds || sel.duration || 0;
+    const eligible = !!entry && entry.positionSeconds > 15 && (dur <= 0 || entry.positionSeconds < dur * 0.95);
+    if (!eligible) { this.resumeInfo.set(null); return; }
+
+    if (autoResume) {
+      this.reloadFrom(entry!.positionSeconds);
+    } else {
+      this.resumeInfo.set({ position: entry!.positionSeconds, label: this.formatTime(entry!.positionSeconds) });
+    }
+  }
+
+  resumeFromHistory() {
+    const info = this.resumeInfo();
+    if (!info) return;
+    this.resumeInfo.set(null);
+    this.reloadFrom(info.position);
+  }
+
+  dismissResume() {
+    this.resumeInfo.set(null);
+  }
+
+  private allFileNodes(): MediaFileNode[] {
+    const result: MediaFileNode[] = [];
+    const walk = (nodes: MediaNode[]) => {
+      for (const node of nodes) {
+        if (node.type === 'folder') walk(node.children);
+        else result.push(node);
+      }
+    };
+    walk(this.tree());
+    return result;
+  }
+
+  private async loadContinueWatching() {
+    const rows  = await this.watchHistory.continueWatching();
+    const files = this.allFileNodes();
+    const items = rows
+      .map(entry => ({ entry, file: files.find(f => f.path === entry.path) }))
+      .filter((x): x is { entry: WatchHistoryEntry; file: MediaFileNode } => !!x.file);
+    this.continueWatchingItems.set(items);
   }
 
   toggleFolder(path: string) {
@@ -264,8 +403,8 @@ export class HomeComponent implements OnInit, OnDestroy {
   // ── Video events ──────────────────────────────────────────────────────────
 
   onPlay()   { this.isPlaying = true; }
-  onPause()  { this.isPlaying = false; this.showControls = true; }
-  onEnded()  { this.isPlaying = false; this.showControls = true; }
+  onPause()  { this.isPlaying = false; this.showControls = true; this.saveWatchProgress(); }
+  onEnded()  { this.isPlaying = false; this.showControls = true; this.saveWatchProgress(); }
 
   onTimeUpdate() {
     const v = this.playerRef.nativeElement;
@@ -333,6 +472,12 @@ export class HomeComponent implements OnInit, OnDestroy {
       );
       console.log('[Cast] Content cast successfully');
       this.playerRef?.nativeElement.pause();
+
+      const entry = await this.watchHistory.get(s.path);
+      const dur = entry?.durationSeconds || s.duration || 0;
+      if (entry && entry.positionSeconds > 15 && (dur <= 0 || entry.positionSeconds < dur * 0.95)) {
+        this.cast.seek(entry.positionSeconds);
+      }
     } catch (error) {
       console.error('[Cast] Error during casting:', error);
     }
@@ -340,43 +485,59 @@ export class HomeComponent implements OnInit, OnDestroy {
 
   // ── Local HLS ─────────────────────────────────────────────────────────────
 
+  /**
+   * (Re)creates the native <track> element and applies the current subtitlesOn state.
+   * Must be called after every (re)attach of an Hls instance to the video element —
+   * recreating the Hls instance resets the video's existing TextTracks to their default
+   * ("disabled", no cues loaded), silently killing subtitles after any seek-triggered
+   * reloadFrom() if not reapplied.
+   */
+  private attachSubtitleTrack(video: HTMLVideoElement, subUrl: string) {
+    if (this.subtitleTrackEl) {
+      try { this.subtitleTrackEl.remove(); } catch {}
+      this.subtitleTrackEl = undefined;
+    }
+    const track = document.createElement('track');
+    track.kind    = 'subtitles';
+    track.label   = 'Legendas';
+    track.srclang = 'pt';
+    // Cue timestamps are always absolute (original-file-relative); after any seek, the
+    // player's own currentTime resets to ~0 for the newly loaded manifest (hlsStartOffset
+    // tracks that reset). Native cue matching only ever compares against currentTime
+    // directly, so the backend must shift cue times by the same offset or they'd never
+    // line up with what's actually on screen post-seek.
+    track.src = this.hlsStartOffset > 0
+      ? `${subUrl}${subUrl.includes('?') ? '&' : '?'}shift=${this.hlsStartOffset}`
+      : subUrl;
+    track.addEventListener('load', () => console.log('[Subtitles] Track loaded successfully'));
+    track.addEventListener('error', (e: any) => console.error('[Subtitles] Failed to load track:', e));
+    video.appendChild(track);
+    this.subtitleTrackEl = track;
+    track.track.mode = this.subtitlesOn ? 'showing' : 'hidden';
+    console.log(`[Subtitles] Track (re)attached from: ${subUrl}, mode=${track.track.mode}`);
+  }
+
   private loadLocal(url: string, subUrl?: string) {
     if (!this.playerRef) return;
     const video = this.playerRef.nativeElement;
     this.hlsStartOffset = 0;
+    this.currentSubUrl = subUrl;
     this.detachLocal();
     video.muted  = false;
     video.volume = this.volume;
 
     if (Hls.isSupported()) {
-      this.hls = new Hls({ enableWorker: true });
+      // startPosition: 0 is required — our backend serves in-progress transcodes as
+      // EVENT-type (non-ENDLIST) playlists, which hls.js otherwise treats as "live" and
+      // defaults startPosition to -1 (start at the live edge / tip of what's encoded so
+      // far) instead of the first listed segment, which is always what we actually want.
+      this.hls = new Hls({ enableWorker: true, startPosition: 0 });
       this.hls.attachMedia(video);
       this.hls.on(Hls.Events.MEDIA_ATTACHED, () => this.hls!.loadSource(url));
       this.hls.on(Hls.Events.MANIFEST_PARSED, () => {
         video.play().catch(() => {});
         this.hls!.subtitleTrack = -1;
-        if (subUrl) {
-          const track = document.createElement('track');
-          track.kind    = 'subtitles';
-          track.label   = 'Legendas';
-          track.srclang = 'pt';
-          track.src     = subUrl;
-          
-          // Log when track loads successfully
-          track.addEventListener('load', () => {
-            console.log('[Subtitles] Track loaded successfully');
-          });
-          
-          // Log track errors
-          track.addEventListener('error', (e: any) => {
-            console.error('[Subtitles] Failed to load track:', e);
-          });
-          
-          video.appendChild(track);
-          this.subtitleTrackEl = track;
-          track.track.mode = 'hidden';
-          console.log(`[Subtitles] Track added from: ${subUrl}`);
-        }
+        if (subUrl) this.attachSubtitleTrack(video, subUrl);
       });
       const globalErrorHandler = (_e: any, data: any) => {
         if (!this.hls || !data.fatal) return;
@@ -409,6 +570,10 @@ export class HomeComponent implements OnInit, OnDestroy {
     const startTime = Math.max(0, t);
     const src = `${sel.url}?start=${startTime.toString()}`;
 
+    this.lastSeekTarget = startTime;
+    this.seekProcessing.set(true);
+    this.seekError.set(null);
+
     console.log(`[Seek] Reloading from ${startTime}s (attempt ${retries + 1})`);
 
     // HLS.js normalizes PTS to 0 for every new source. Track the offset so that
@@ -420,17 +585,26 @@ export class HomeComponent implements OnInit, OnDestroy {
       this.hls = undefined;
     }
 
-    if (!Hls.isSupported()) return;
+    if (!Hls.isSupported()) { this.seekProcessing.set(false); return; }
 
-    this.hls = new Hls({ enableWorker: true });
+    // See loadLocal() for why startPosition: 0 is required for in-progress (EVENT-type)
+    // playlists — without it hls.js jumps to the live edge instead of the requested segment.
+    this.hls = new Hls({ enableWorker: true, startPosition: 0 });
     this.hls.attachMedia(video);
 
-    const MANIFEST_TIMEOUT_MS = 35000;
+    // The backend can take up to ~600s to produce a fresh segment for a brand-new
+    // seek position under load, so give it a generous ceiling (45s x 4 attempts) before
+    // surfacing an error, rather than the previous 35s/1-retry setup.
+    const MANIFEST_TIMEOUT_MS = 45000;
+    const MAX_RETRIES = 3;
     let manifestTimeout: any;
 
     const manifestHandler = () => {
       clearTimeout(manifestTimeout);
       console.log('[Seek] Manifest parsed successfully');
+      this.seekProcessing.set(false);
+      // Reattaching Hls above reset the video's TextTracks — reapply subtitles now.
+      if (this.currentSubUrl) this.attachSubtitleTrack(video, this.currentSubUrl);
       video.play().catch(() => {});
     };
 
@@ -444,6 +618,8 @@ export class HomeComponent implements OnInit, OnDestroy {
       } else {
         this.hls.destroy();
         this.hls = undefined;
+        this.seekProcessing.set(false);
+        this.seekError.set('Falha ao carregar o vídeo.');
       }
     };
     (this.hls as any)._globalErrorHandler = errorHandler;
@@ -455,12 +631,19 @@ export class HomeComponent implements OnInit, OnDestroy {
     manifestTimeout = setTimeout(() => {
       if (this.hls) this.hls.off(Hls.Events.MANIFEST_PARSED, manifestHandler);
       console.warn('[Seek] Manifest parsing timeout after', MANIFEST_TIMEOUT_MS, 'ms');
-      if (retries < 1) {
+      if (retries < MAX_RETRIES) {
         this.reloadFrom(t, retries + 1);
       } else {
         console.error('[Seek] Giving up after retries');
+        this.seekProcessing.set(false);
+        this.seekError.set('O processamento está demorando mais que o esperado.');
       }
     }, MANIFEST_TIMEOUT_MS);
+  }
+
+  retrySeek() {
+    this.seekError.set(null);
+    this.reloadFrom(this.lastSeekTarget, 0);
   }
 
   private detachLocal() {

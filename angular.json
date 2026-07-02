@@ -43,8 +43,8 @@
                 },
                 {
                   "type": "anyComponentStyle",
-                  "maximumWarning": "4kB",
-                  "maximumError": "8kB"
+                  "maximumWarning": "8kB",
+                  "maximumError": "20kB"
                 }
               ],
               "outputHashing": "all",
@@ -61,6 +61,7 @@
         "serve": {
           "builder": "@angular/build:dev-server",
           "options": {
+            "host": "0.0.0.0",
             "ssl": true,
             "sslCert": "C:/Users/Thales/AppData/Local/Posh-ACME/LE_PROD/3275644921/flamestream.tdonsoft.com/fullchain.cer",
             "sslKey": "C:/Users/Thales/AppData/Local/Posh-ACME/LE_PROD/3275644921/flamestream.tdonsoft.com/cert.key"
@@ -71,6 +72,11 @@
             },
             "development": {
               "buildTarget": "FlameStreamFrontend:build:development"
+            },
+            "lan-server": {
+              "buildTarget": "FlameStreamFrontend:build:production",
+              "liveReload": false,
+              "hmr": false
             }
           },
           "defaultConfiguration": "development"
