@@ -15,7 +15,8 @@
             }
           </button>
           @if (trackerPopupPos(); as pos) {
-            <div class="tracker-popup" [style.top.px]="pos.top" [style.left.px]="pos.left">
+            <div class="tracker-popup" [style.top.px]="pos.top" [style.left.px]="pos.left"
+                 (mouseenter)="keepTrackerOpen()" (mouseleave)="onTrackerLeave()">
               @if (!tracker.jobs().length) {
                 <div class="tracker-empty">Nenhum processamento ativo</div>
               } @else {

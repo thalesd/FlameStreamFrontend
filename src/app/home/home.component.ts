@@ -139,6 +139,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     this.saveWatchProgress();
     this.detachLocal();
     clearTimeout(this.controlsTimer);
+    clearTimeout(this.trackerCloseTimer);
     clearInterval(this.watchHistoryTimer);
     window.removeEventListener('beforeunload', this.beforeUnloadHandler);
     document.removeEventListener('fullscreenchange', () => {});
@@ -150,14 +151,25 @@ export class HomeComponent implements OnInit, OnDestroy {
   }
 
   trackerPopupPos = signal<{ top: number; left: number } | null>(null);
+  private trackerCloseTimer: any;
 
   onTrackerEnter(e: MouseEvent) {
+    clearTimeout(this.trackerCloseTimer);
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     this.trackerPopupPos.set({ top: rect.bottom + 8, left: rect.left });
   }
 
   onTrackerLeave() {
-    this.trackerPopupPos.set(null);
+    // The popup is position:fixed with an 8px gap below the button, so it isn't part
+    // of the wrapper's hover box — moving the pointer toward it fires mouseleave and
+    // used to close it instantly, making the Cancel button unreachable. Delay the close
+    // so the pointer can cross the gap; entering the popup (keepTrackerOpen) cancels it.
+    clearTimeout(this.trackerCloseTimer);
+    this.trackerCloseTimer = setTimeout(() => this.trackerPopupPos.set(null), 250);
+  }
+
+  keepTrackerOpen() {
+    clearTimeout(this.trackerCloseTimer);
   }
 
   jobForPath(path: string) {
