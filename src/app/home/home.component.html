@@ -3,7 +3,10 @@
   <!-- ═══ SIDEBAR ═══════════════════════════════════════════════════════════ -->
   <aside class="sidebar" [class.collapsed]="!showSidebar">
     <div class="sidebar-header">
-      <span class="logo">🔥 FlameStream</span>
+      <span class="logo">
+        <img class="logo-mark" src="CozyFlameLogo.svg" alt="" aria-hidden="true" />
+        FlameStream
+      </span>
       <div class="header-actions">
         <div class="tracker-wrap" (mouseenter)="onTrackerEnter($event)" (mouseleave)="onTrackerLeave()">
           <button class="icon-btn" title="Processamento em andamento">
@@ -225,7 +228,7 @@
           <!-- Progress bar -->
           @let ct  = cast.connected() ? cast.castCurrentTime() : currentTime;
           @let dur = (cast.connected() ? cast.castDuration() : 0) || duration;
-          <div class="progress-area">
+          <div class="progress-area" [class.scrubbing]="scrubbing">
             <div class="progress-track">
               <div class="progress-buffered" [style.width.%]="cast.connected() ? 0 : buffered"></div>
               <div class="progress-fill"     [style.width.%]="dur ? (ct / dur) * 100 : 0"></div>
@@ -236,6 +239,12 @@
               min="0" [max]="dur || 100" step="0.1"
               [value]="ct"
               (input)="seek($event)"
+              (pointerdown)="scrubbing = true"
+              (pointerup)="scrubbing = false"
+              (pointercancel)="scrubbing = false"
+              (keydown)="scrubbing = true"
+              (keyup)="scrubbing = false"
+              (blur)="scrubbing = false"
             />
           </div>
 

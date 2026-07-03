@@ -69,6 +69,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   volume          = 1;
   subtitlesOn     = false;
   subtitlesAvailable = false;
+  scrubbing       = false;  // true while the seek bar is being pressed/dragged (#125 slash handle)
   buffered        = 0;
   castUseDirectFile  = false;
   castActiveTrackId  = signal<number | null>(null);
@@ -103,6 +104,7 @@ export class HomeComponent implements OnInit, OnDestroy {
       this.castUseDirectFile = false;
       this.currentTime = 0;
       this.duration = sel.duration ?? 0;
+      this.clearResumeTimer();
       this.resumeInfo.set(null);
       const effectiveSub = sel.subUrl || sel.embeddedSubtitles?.[0]?.url;
       setTimeout(() => this.loadLocal(sel.url, effectiveSub ?? undefined));
@@ -147,6 +149,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     this.detachLocal();
     clearTimeout(this.controlsTimer);
     clearTimeout(this.trackerCloseTimer);
+    this.clearResumeTimer();
     clearInterval(this.watchHistoryTimer);
     window.removeEventListener('beforeunload', this.beforeUnloadHandler);
     document.removeEventListener('fullscreenchange', () => {});
@@ -241,17 +244,26 @@ export class HomeComponent implements OnInit, OnDestroy {
       this.reloadFrom(entry!.positionSeconds);
     } else {
       this.resumeInfo.set({ position: entry!.positionSeconds, label: this.formatTime(entry!.positionSeconds) });
+      // Auto-dismiss the "continue from where you left off?" prompt after 5s so it
+      // doesn't sit over playback if ignored (#122).
+      this.clearResumeTimer();
+      this.resumeDismissTimer = setTimeout(() => this.dismissResume(), 5000);
     }
   }
+
+  private resumeDismissTimer: any;
+  private clearResumeTimer() { clearTimeout(this.resumeDismissTimer); }
 
   resumeFromHistory() {
     const info = this.resumeInfo();
     if (!info) return;
+    this.clearResumeTimer();
     this.resumeInfo.set(null);
     this.reloadFrom(info.position);
   }
 
   dismissResume() {
+    this.clearResumeTimer();
     this.resumeInfo.set(null);
   }
 
