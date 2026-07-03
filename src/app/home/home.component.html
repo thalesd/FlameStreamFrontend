@@ -245,30 +245,40 @@
           <!-- Progress bar -->
           @let ct  = cast.connected() ? cast.castCurrentTime() : currentTime;
           @let dur = (cast.connected() ? cast.castDuration() : 0) || duration;
+          <!-- While scrubbing, the handle follows scrubValue (the cursor) rather than the
+               live play position, and the seek only commits on release (#126). -->
+          @let pos = scrubbing ? scrubValue : ct;
           <div class="progress-area" [class.scrubbing]="scrubbing"
                (mousemove)="onSeekHover($event)" (mouseleave)="onSeekLeave()">
             @if (scenePreview(); as prev) {
               <div class="scene-preview" [style.left.px]="prev.leftPx">
-                <img class="scene-preview-img" [src]="prev.url" alt="" draggable="false" />
+                @if (thumbFailed().has(prev.url)) {
+                  <div class="scene-preview-img scene-preview-empty">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                  </div>
+                } @else {
+                  <img class="scene-preview-img" [src]="prev.url" alt="" draggable="false"
+                       (error)="onThumbError(prev.url)" />
+                }
                 <span class="scene-preview-time">{{ formatTime(prev.time) }}</span>
               </div>
             }
             <div class="progress-track">
               <div class="progress-buffered" [style.width.%]="cast.connected() ? 0 : buffered"></div>
-              <div class="progress-fill"     [style.width.%]="dur ? (ct / dur) * 100 : 0"></div>
-              <div class="progress-thumb"    [style.left.%]="dur ? (ct / dur) * 100 : 0"></div>
+              <div class="progress-fill"     [style.width.%]="dur ? (pos / dur) * 100 : 0"></div>
+              <div class="progress-thumb"    [style.left.%]="dur ? (pos / dur) * 100 : 0"></div>
             </div>
             <input
               type="range" class="progress-input"
               min="0" [max]="dur || 100" step="0.1"
-              [value]="ct"
-              (input)="seek($event)"
-              (pointerdown)="scrubbing = true"
-              (pointerup)="scrubbing = false"
-              (pointercancel)="scrubbing = false"
-              (keydown)="scrubbing = true"
-              (keyup)="scrubbing = false"
-              (blur)="scrubbing = false"
+              [value]="pos"
+              (input)="onScrubMove($event)"
+              (pointerdown)="onScrubStart()"
+              (pointerup)="onScrubEnd()"
+              (pointercancel)="onScrubEnd()"
+              (keydown)="onScrubStart()"
+              (keyup)="onScrubEnd()"
+              (blur)="onScrubEnd()"
             />
           </div>
 
@@ -323,7 +333,7 @@
 
               <!-- Tempo -->
               <span class="time-display">
-                {{ formatTime(ct) }} / {{ formatTime(dur) }}
+                {{ formatTime(pos) }} / {{ formatTime(dur) }}
               </span>
             </div>
 

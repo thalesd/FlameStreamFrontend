@@ -78,6 +78,9 @@ export class HomeComponent implements OnInit, OnDestroy {
   scrubbing       = false;  // true while the seek bar is being pressed/dragged (#125 slash handle)
   // Scene preview popup shown while hovering the seek bar (#124).
   scenePreview = signal<{ time: number; leftPx: number; url: string } | null>(null);
+  // URLs whose thumbnail failed to load — rendered as a placeholder instead of a broken
+  // <img>, and never retried, so a missing/failed frame never shows a broken-link icon.
+  thumbFailed = signal<Set<string>>(new Set());
   buffered        = 0;
   castUseDirectFile  = false;
   castActiveTrackId  = signal<number | null>(null);
@@ -344,10 +347,32 @@ export class HomeComponent implements OnInit, OnDestroy {
     this.isMuted = v.muted;
   }
 
-  seek(e: Event) {
-    e.preventDefault();
-    const val = +(e.target as HTMLInputElement).value;
+  // The seek bar is drag-to-preview, commit-on-release (#126): while the pointer is down
+  // `scrubValue` drives the handle so it tracks the cursor exactly (playback timeupdates
+  // no longer fight it), and the actual seek fires once, on release — not on every input
+  // tick, which previously re-transcoded repeatedly and yanked the handle back to the play
+  // position mid-drag.
+  scrubValue = 0;
 
+  onScrubStart() {
+    if (this.scrubbing) return; // don't reset the value on key-repeat / re-entry mid-drag
+    this.scrubbing = true;
+    this.scrubValue = this.cast.isConnected() ? this.cast.castCurrentTime() : this.currentTime;
+  }
+
+  onScrubMove(e: Event) {
+    // Visual only — no seeking until release.
+    this.scrubbing = true;
+    this.scrubValue = +(e.target as HTMLInputElement).value;
+  }
+
+  onScrubEnd() {
+    if (!this.scrubbing) return;
+    this.scrubbing = false;
+    this.commitSeek(this.scrubValue);
+  }
+
+  private commitSeek(val: number) {
     if (this.cast.isConnected()) {
       this.currentTime = val;
       this.cast.seek(val);
@@ -370,7 +395,8 @@ export class HomeComponent implements OnInit, OnDestroy {
     if (!isBuffered && this.hls) {
       this.currentTime = val;
       clearTimeout(this.seekDebounce);
-      this.seekDebounce = setTimeout(() => this.reloadFrom(val), 200);
+      // Commit happens on release now, so seek immediately rather than debouncing.
+      this.reloadFrom(val);
     } else {
       v.currentTime = localVal;
     }
@@ -396,6 +422,15 @@ export class HomeComponent implements OnInit, OnDestroy {
   }
 
   onSeekLeave() { this.scenePreview.set(null); }
+
+  onThumbError(url: string) {
+    this.thumbFailed.update(set => {
+      if (set.has(url)) return set;
+      const next = new Set(set);
+      next.add(url);
+      return next;
+    });
+  }
 
   setVolume(e: Event) {
     const val = +(e.target as HTMLInputElement).value;

@@ -688,6 +688,13 @@ $font-mono:     'DM Mono', monospace;
     box-shadow: 0 6px 22px rgba(0,0,0,.55);
     display: block;
   }
+  .scene-preview-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255,255,255,.28);
+    svg { width: 30px; height: 30px; }
+  }
   .scene-preview-time {
     font-size: 12px;
     font-weight: 600;
