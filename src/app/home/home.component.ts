@@ -96,6 +96,11 @@ export class HomeComponent implements OnInit, OnDestroy {
       if (this.cast.isConnected()) { this.detachLocal(); return; }
       this.subtitlesAvailable = !!(sel.subUrl || sel.embeddedSubtitles?.length);
       this.subtitlesOn = false;
+      // HLS by default for casting: the receiver drives playback itself with hls.js
+      // (the TV's CAF PlayerManager is broken for all media — see receiver.js), so
+      // HLS works universally, MKV transcodes included. DIR remains a manual override
+      // for plain MP4s (native progressive playback on the receiver's <video>).
+      this.castUseDirectFile = false;
       this.currentTime = 0;
       this.duration = sel.duration ?? 0;
       this.resumeInfo.set(null);
@@ -503,25 +508,31 @@ export class HomeComponent implements OnInit, OnDestroy {
         url = s.directUrl;
       } else {
         url  = s.url;
-        mime = 'application/vnd.apple.mpegurl';
+        // application/x-mpegurl (not vnd.apple.mpegurl) — the HLS MIME value Google's
+        // Cast samples use; some receiver stacks only reliably match this spelling.
+        mime = 'application/x-mpegurl';
       }
 
       const tracks  = this.castTracks();
       const trackId = this.castActiveTrackId();
-      console.log(`[Cast] Mode: ${this.castUseDirectFile ? 'direct' : 'hls'} — ${url} — ${tracks.length} subtitle track(s)`);
+
+      // Resume position rides the load message itself (the receiver loads directly at
+      // ?start=<t>) instead of a racy seek command fired right after the load.
+      const entry = await this.watchHistory.get(s.path);
+      const dur = entry?.durationSeconds || s.duration || 0;
+      const resumeAt = entry && entry.positionSeconds > 15 && (dur <= 0 || entry.positionSeconds < dur * 0.95)
+        ? entry.positionSeconds : 0;
+
+      console.log(`[Cast] Mode: ${this.castUseDirectFile ? 'direct' : 'hls'} — ${url} — ${tracks.length} subtitle track(s), resume=${resumeAt}s`);
       await this.cast.castUrl(
         url, mime, s.title, undefined,
         tracks.length ? tracks : undefined,
-        trackId ?? undefined
+        trackId ?? undefined,
+        s.duration ?? 0,
+        resumeAt
       );
       console.log('[Cast] Content cast successfully');
       this.playerRef?.nativeElement.pause();
-
-      const entry = await this.watchHistory.get(s.path);
-      const dur = entry?.durationSeconds || s.duration || 0;
-      if (entry && entry.positionSeconds > 15 && (dur <= 0 || entry.positionSeconds < dur * 0.95)) {
-        this.cast.seek(entry.positionSeconds);
-      }
     } catch (error) {
       console.error('[Cast] Error during casting:', error);
     }
@@ -598,7 +609,12 @@ export class HomeComponent implements OnInit, OnDestroy {
       this.hls = new Hls({ enableWorker: true, startPosition: 0 });
       this.hls.attachMedia(video);
       // Fires before MANIFEST_PARSED, so hlsStartOffset is corrected before subtitles attach.
+      // MANIFEST_LOADED sees the master playlist's response; LEVEL_LOADED sees the media
+      // playlist's — the X-Hls-Start-Offset header rides on the media response now that
+      // /stream fronts everything with a one-variant master (Chromecast requires one), so
+      // hook both and let whichever response carries the header win.
       this.hls.on(Hls.Events.MANIFEST_LOADED, (_e, data) => this.applyStartOffsetHeader(data));
+      this.hls.on(Hls.Events.LEVEL_LOADED, (_e, data) => this.applyStartOffsetHeader(data));
       this.hls.on(Hls.Events.MEDIA_ATTACHED, () => this.hls!.loadSource(url));
       this.hls.on(Hls.Events.MANIFEST_PARSED, () => {
         video.play().catch(() => {});
@@ -659,7 +675,10 @@ export class HomeComponent implements OnInit, OnDestroy {
     this.hls = new Hls({ enableWorker: true, startPosition: 0 });
     this.hls.attachMedia(video);
     // Corrects hlsStartOffset to the true segment start before MANIFEST_PARSED reattaches subs.
+    // Both hooks needed: the header rides the media playlist (LEVEL_LOADED), not the
+    // master (MANIFEST_LOADED) — see loadLocal().
     this.hls.on(Hls.Events.MANIFEST_LOADED, (_e, data) => this.applyStartOffsetHeader(data));
+    this.hls.on(Hls.Events.LEVEL_LOADED, (_e, data) => this.applyStartOffsetHeader(data));
 
     // The backend can take up to ~600s to produce a fresh segment for a brand-new
     // seek position under load, so give it a generous ceiling (45s x 4 attempts) before

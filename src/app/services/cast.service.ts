@@ -1,13 +1,19 @@
 import { Injectable, NgZone, signal } from '@angular/core';
 import { CAST_MEDIA_BASE, RECEIVER_APP_ID } from '../../../env-cast';
 
+// Custom message channel shared with the receiver (wwwroot/receiver.js in the backend).
+// The TV's CAF PlayerManager is broken for every media type (LOAD_FAILED 905 pre-network,
+// even for Google's own sample streams — established 2026-07-03), so the receiver drives
+// playback itself with hls.js and the sender talks to it over this namespace instead of
+// the standard media channel. Protocol documented at the top of receiver.js.
+const NS = 'urn:x-cast:flamestream';
+
 @Injectable({ providedIn: 'root' })
 export class CastService {
   private context: any;
   private _session: any = null;
-  private mediaSession: any = null;
   private initialized = false;
-  private pollInterval: any = null;
+  private messageListenerAttached = false;
 
   constructor(private ngZone: NgZone) {}
 
@@ -15,6 +21,7 @@ export class CastService {
   readonly castPlaying     = signal(false);
   readonly castCurrentTime = signal(0);
   readonly castDuration    = signal(0);
+  readonly castTrackId     = signal<number | null>(null);
 
   init(): void {
     if (this.initialized) return;
@@ -44,22 +51,17 @@ export class CastService {
           console.log('[Cast] Session state changed:', e.sessionState);
           if (e.sessionState === SS.SESSION_STARTED || e.sessionState === SS.SESSION_RESUMED) {
             this._session = castContext.getCurrentSession();
+            this.attachMessageListener();
             this.connected.set(true);
           } else if (e.sessionState === SS.SESSION_ENDED || e.sessionState === SS.NO_SESSION) {
             this._session = null;
-            this.mediaSession = null;
+            this.messageListenerAttached = false;
             this.connected.set(false);
             this.castPlaying.set(false);
             this.castCurrentTime.set(0);
-            clearInterval(this.pollInterval);
           }
         }
       );
-
-      const ui = (window as any).cast?.framework?.ui;
-      if (ui?.setLoggerLevel) {
-        ui.setLoggerLevel((window as any).cast.framework.LoggerLevel.INFO);
-      }
     });
   }
 
@@ -69,138 +71,83 @@ export class CastService {
   async requestSession(): Promise<any> {
     if (this._session) return this._session;
     this._session = await this.context.requestSession();
+    this.attachMessageListener();
     this.connected.set(true);
     return this._session;
   }
 
-  // ── Media controls ────────────────────────────────────────────────────────
-
-  play() {
-    this.mediaSession?.play(new (window as any).chrome.cast.media.PlayRequest(), null, null);
+  // Receiver broadcasts {type:'status', t, dur, paused, trackId} every second.
+  private attachMessageListener() {
+    if (!this._session || this.messageListenerAttached) return;
+    this.messageListenerAttached = true;
+    this._session.addMessageListener(NS, (_ns: string, raw: string) => {
+      let m: any;
+      try { m = JSON.parse(raw); } catch { return; }
+      if (m?.type !== 'status') return;
+      this.ngZone.run(() => {
+        this.castCurrentTime.set(m.t ?? 0);
+        if (m.dur > 0) this.castDuration.set(m.dur);
+        this.castPlaying.set(!m.paused);
+        this.castTrackId.set(m.trackId ?? null);
+      });
+    });
   }
 
-  pause() {
-    this.mediaSession?.pause(new (window as any).chrome.cast.media.PauseRequest(), null, null);
+  private send(msg: object) {
+    if (!this._session) return;
+    this._session.sendMessage(NS, msg).catch?.((e: any) =>
+      console.error('[Cast] sendMessage failed:', e));
   }
+
+  // ── Media controls (all via the custom channel) ───────────────────────────
+
+  play()  { this.send({ type: 'play' }); this.castPlaying.set(true); }
+  pause() { this.send({ type: 'pause' }); this.castPlaying.set(false); }
 
   togglePlay() {
     if (this.castPlaying()) this.pause(); else this.play();
   }
 
   seek(time: number) {
-    if (!this.mediaSession) return;
-    const req = new (window as any).chrome.cast.media.SeekRequest();
-    req.currentTime = time;
-    this.mediaSession.seek(req, null, null);
+    this.send({ type: 'seek', time });
     this.castCurrentTime.set(time);
   }
 
-  setVolume(level: number) {
-    if (!this.mediaSession) return;
-    const vol = new (window as any).chrome.cast.Volume();
-    vol.level = Math.max(0, Math.min(1, level));
-    const req = new (window as any).chrome.cast.media.VolumeRequest();
-    req.volume = vol;
-    this.mediaSession.setVolume(req, null, null);
-  }
-
-  setMuted(muted: boolean) {
-    if (!this.mediaSession) return;
-    const vol = new (window as any).chrome.cast.Volume();
-    vol.muted = muted;
-    const req = new (window as any).chrome.cast.media.VolumeRequest();
-    req.volume = vol;
-    this.mediaSession.setVolume(req, null, null);
-  }
+  setVolume(level: number) { this.send({ type: 'setVolume', level }); }
+  setMuted(muted: boolean) { this.send({ type: 'setMuted', muted }); }
 
   activateTrack(trackId: number | null) {
-    if (!this.mediaSession) return;
-    const req = new (window as any).chrome.cast.media.EditTracksInfoRequest();
-    req.activeTrackIds = trackId != null ? [trackId] : [];
-    this.mediaSession.editTracksInfo(req, null, null);
+    this.send({ type: 'setTrack', id: trackId });
   }
 
-  // ── Internal ──────────────────────────────────────────────────────────────
-
-  private setupMediaListener(media: any) {
-    this.mediaSession = media;
-    this.castDuration.set(media.media?.duration ?? 0);
-    this.castPlaying.set(media.playerState === 'PLAYING' || media.playerState === 'BUFFERING');
-
-    media.addUpdateListener((isAlive: boolean) => {
-      if (!isAlive) {
-        this.mediaSession = null;
-        this.castPlaying.set(false);
-        clearInterval(this.pollInterval);
-        return;
-      }
-      this.castPlaying.set(media.playerState === 'PLAYING' || media.playerState === 'BUFFERING');
-      const dur = media.media?.duration ?? 0;
-      if (dur > 0) this.castDuration.set(dur);
-    });
-
-    clearInterval(this.pollInterval);
-    this.pollInterval = setInterval(() => {
-      if (this.mediaSession) {
-        this.ngZone.run(() => this.castCurrentTime.set(this.mediaSession.currentTime ?? 0));
-      }
-    }, 500);
-  }
-
-  // ── Cast URL ──────────────────────────────────────────────────────────────
+  // ── Load ──────────────────────────────────────────────────────────────────
 
   async castUrl(
-    url: string, contentType: string, title?: string, poster?: string,
+    url: string, _contentType: string, title?: string, _poster?: string,
     tracks?: Array<{ id: number; lang: string; name: string; url: string }>,
-    activeTrackId?: number
+    activeTrackId?: number,
+    duration?: number,
+    startTime?: number,
   ) {
     if (!this.isReady()) this.init();
     const session = this.context.getCurrentSession() ?? await this.context.requestSession();
+    this._session = session;
+    this.attachMessageListener();
 
     const mediaUrl = url.startsWith('http') ? url : `${CAST_MEDIA_BASE}${url}`;
-    console.log(`[Cast] Loading media: ${mediaUrl}`);
+    console.log(`[Cast] Loading media (custom channel): ${mediaUrl}`);
 
-    const mediaInfo = new (window as any).chrome.cast.media.MediaInfo(mediaUrl, contentType);
-    const md = new (window as any).chrome.cast.media.MovieMediaMetadata();
-    if (title) md.title = title;
-    if (poster) md.images = [{ url: poster }];
-    mediaInfo.metadata = md;
+    if (duration && duration > 0) this.castDuration.set(duration);
 
-    if (tracks?.length) {
-      mediaInfo.tracks = tracks.map(t => {
-        const track = new (window as any).chrome.cast.media.Track(
-          t.id, (window as any).chrome.cast.media.TrackType.TEXT
-        );
-        track.language         = t.lang || 'und';
-        track.name             = t.name || t.lang;
-        track.subtype          = (window as any).chrome.cast.media.TextTrackType.SUBTITLES;
-        track.trackContentType = 'text/vtt';
-        track.trackContentId   = t.url;
-        return track;
-      });
-      
-      // Configure subtitle styling: transparent background, white text, black outline
-      const textTrackStyle = new (window as any).chrome.cast.media.TextTrackStyle();
-      textTrackStyle.foregroundColor = '#FFFFFFFF';  // White text (RRGGBBAA format)
-      textTrackStyle.backgroundColor = '#00000000';  // Transparent background
-      textTrackStyle.windowColor = '#00000000';      // Transparent window
-      textTrackStyle.edgeType = (window as any).chrome.cast.media.TextTrackEdgeType.OUTLINE;
-      textTrackStyle.edgeColor = '#000000FF';        // Black outline (RRGGBBAA format)
-      textTrackStyle.fontScale = 1.0;                // Normal font size
-      mediaInfo.textTrackStyle = textTrackStyle;
-    }
-
-    const request = new (window as any).chrome.cast.media.LoadRequest(mediaInfo);
-    if (activeTrackId != null) request.activeTrackIds = [activeTrackId];
-
-    try {
-      await session.loadMedia(request);
-      console.log('[Cast] Media loaded successfully');
-      const media = session.getMediaSession();
-      if (media) this.setupMediaListener(media);
-    } catch (error) {
-      console.error('[Cast] Failed to load media:', error);
-      throw error;
-    }
+    await session.sendMessage(NS, {
+      type: 'load',
+      url: mediaUrl,
+      title,
+      duration: duration ?? 0,
+      startTime: startTime ?? 0,
+      tracks,
+      activeTrackId: activeTrackId ?? null,
+    });
+    console.log('[Cast] Load message sent');
   }
 }
