@@ -5,7 +5,7 @@
     <div class="sidebar-header">
       <span class="logo">
         <img class="logo-mark" src="CozyFlameLogo.svg" alt="" aria-hidden="true" />
-        FlameStream
+        CozyFlame Stream
       </span>
       <div class="header-actions">
         <div class="tracker-wrap" (mouseenter)="onTrackerEnter($event)" (mouseleave)="onTrackerLeave()">
@@ -204,6 +204,23 @@
             <span>Continuar de {{ resumeInfo()!.label }}?</span>
             <button class="resume-btn" (click)="resumeFromHistory()">Continuar</button>
             <button class="resume-dismiss" (click)="dismissResume()" title="Dispensar">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+        }
+
+        <!-- Próximo episódio — exibido ao terminar um episódio com um próximo na mesma pasta -->
+        @if (!cast.connected() && upNext(); as next) {
+          <div class="upnext-banner">
+            <div class="upnext-info">
+              <span class="upnext-label">Próximo episódio em {{ next.seconds }}s</span>
+              <span class="upnext-title">{{ next.file.name }}</span>
+            </div>
+            <button class="upnext-play" (click)="playNextEpisode()">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+              Reproduzir
+            </button>
+            <button class="upnext-dismiss" (click)="cancelUpNext()" title="Cancelar">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
             </button>
           </div>

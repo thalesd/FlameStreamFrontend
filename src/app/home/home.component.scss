@@ -498,6 +498,68 @@ $font-mono:     'DM Mono', monospace;
   }
 }
 
+// ── Up next banner ─────────────────────────────────────────────────────────────
+.upnext-banner {
+  position: absolute;
+  right: 24px;
+  bottom: 96px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px 12px 18px;
+  border-radius: 10px;
+  background: rgba(18, 22, 31, .94);
+  border: 1px solid rgba(255,255,255,.1);
+  box-shadow: 0 6px 26px rgba(0,0,0,.5);
+
+  .upnext-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-width: 320px;
+  }
+  .upnext-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: $text-muted;
+  }
+  .upnext-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: $text-primary;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .upnext-play {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px 7px 10px;
+    border-radius: 6px;
+    border: none;
+    background: $accent;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    svg { width: 16px; height: 16px; }
+    &:hover { filter: brightness(1.1); }
+  }
+  .upnext-dismiss {
+    display: flex;
+    background: none;
+    border: none;
+    color: $text-muted;
+    cursor: pointer;
+    padding: 2px;
+    svg { width: 16px; height: 16px; }
+    &:hover { color: $text-primary; }
+  }
+}
+
 // ── Player container ──────────────────────────────────────────────────────────
 .player-container {
   position: relative;

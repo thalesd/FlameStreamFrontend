@@ -42,6 +42,12 @@ export class HomeComponent implements OnInit, OnDestroy {
   continueWatchingItems = signal<Array<{ file: MediaFileNode; entry: WatchHistoryEntry }>>([]);
   private pendingAutoResume = false;
 
+  // "Up next" auto-advance: when an episode ends, the next file in the same folder
+  // (i.e. the next episode of the series) is queued and plays after a short countdown.
+  upNext = signal<{ file: MediaFileNode; seconds: number } | null>(null);
+  private readonly UP_NEXT_SECONDS = 8;
+  private upNextInterval: any;
+
   flatList   = computed(() => this.flattenNodes(this.tree(), this.expandedFolders()));
   castTracks = computed(() => {
     const s = this.selected();
@@ -106,6 +112,7 @@ export class HomeComponent implements OnInit, OnDestroy {
       this.duration = sel.duration ?? 0;
       this.clearResumeTimer();
       this.resumeInfo.set(null);
+      this.clearUpNext();
       const effectiveSub = sel.subUrl || sel.embeddedSubtitles?.[0]?.url;
       setTimeout(() => this.loadLocal(sel.url, effectiveSub ?? undefined));
       this.checkResume(sel);
@@ -150,6 +157,7 @@ export class HomeComponent implements OnInit, OnDestroy {
     clearTimeout(this.controlsTimer);
     clearTimeout(this.trackerCloseTimer);
     this.clearResumeTimer();
+    this.clearUpNext();
     clearInterval(this.watchHistoryTimer);
     window.removeEventListener('beforeunload', this.beforeUnloadHandler);
     document.removeEventListener('fullscreenchange', () => {});
@@ -463,9 +471,83 @@ export class HomeComponent implements OnInit, OnDestroy {
 
   // ── Video events ──────────────────────────────────────────────────────────
 
-  onPlay()   { this.isPlaying = true; }
+  onPlay()   { this.isPlaying = true; this.clearUpNext(); }
   onPause()  { this.isPlaying = false; this.showControls = true; this.saveWatchProgress(); }
-  onEnded()  { this.isPlaying = false; this.showControls = true; this.saveWatchProgress(); }
+  onEnded()  {
+    this.isPlaying = false;
+    this.showControls = true;
+    this.saveWatchProgress();
+    this.maybeQueueNextEpisode();
+  }
+
+  // ── Up next / auto-advance ──────────────────────────────────────────────────
+
+  /**
+   * Locate the next episode: the file that follows `path` among its sibling files in
+   * the same folder. Only searches within folders — top-level files are standalone
+   * titles, not a series, so they never chain into one another.
+   */
+  private findNextEpisode(path: string): MediaFileNode | null {
+    const searchFolder = (children: MediaNode[]): MediaFileNode | null => {
+      const idx = children.findIndex(n => n.type === 'file' && n.path === path);
+      if (idx !== -1) {
+        for (let i = idx + 1; i < children.length; i++) {
+          if (children[i].type === 'file') return children[i] as MediaFileNode;
+        }
+        return null; // last episode in this folder
+      }
+      for (const n of children) {
+        if (n.type === 'folder') {
+          const found = searchFolder(n.children);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+    for (const n of this.tree()) {
+      if (n.type === 'folder') {
+        const found = searchFolder(n.children);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  private maybeQueueNextEpisode() {
+    // Casting is driven by the receiver; auto-advance only applies to local playback.
+    if (this.cast.isConnected()) return;
+    const sel = this.selected();
+    if (!sel) return;
+    const next = this.findNextEpisode(sel.path);
+    if (!next) return;
+
+    this.clearUpNext();
+    this.upNext.set({ file: next, seconds: this.UP_NEXT_SECONDS });
+    this.upNextInterval = setInterval(() => {
+      const cur = this.upNext();
+      if (!cur) return;
+      if (cur.seconds <= 1) {
+        this.playNextEpisode();
+      } else {
+        this.upNext.set({ file: cur.file, seconds: cur.seconds - 1 });
+      }
+    }, 1000);
+  }
+
+  playNextEpisode() {
+    const cur = this.upNext();
+    if (!cur) return;
+    this.clearUpNext();
+    this.select(cur.file);
+  }
+
+  cancelUpNext() { this.clearUpNext(); }
+
+  private clearUpNext() {
+    clearInterval(this.upNextInterval);
+    this.upNextInterval = undefined;
+    this.upNext.set(null);
+  }
 
   onTimeUpdate() {
     const v = this.playerRef.nativeElement;

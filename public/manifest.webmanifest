@@ -1,6 +1,6 @@
 {
-  "name": "FlameStreamFrontend",
-  "short_name": "FlameStreamFrontend",
+  "name": "CozyFlame Stream",
+  "short_name": "CozyFlame Stream",
   "display": "standalone",
   "scope": "./",
   "start_url": "./",
