@@ -307,7 +307,39 @@
               </button>
 
               <!-- Subtitle track picker (cast) -->
-              @if (castTracks().length) {
+              @if (castTracks().length > 2) {
+                <!-- Many tracks (e.g. multi-sub WEB-DL rips): collapse into a click popup -->
+                <div class="track-picker">
+                  <button
+                    class="track-btn track-toggle"
+                    [class.active]="castActiveTrackId() !== null"
+                    (click)="toggleTrackMenu()"
+                    title="Escolher legenda"
+                  >{{ activeTrackLabel() }} <span class="caret">▾</span></button>
+
+                  @if (showTrackMenu()) {
+                    <div class="track-menu-backdrop" (click)="closeTrackMenu()"></div>
+                    <div class="track-menu">
+                      <button
+                        class="track-menu-item"
+                        [class.active]="castActiveTrackId() === null"
+                        (click)="setCastTrack(null)"
+                      >Sem legendas</button>
+                      @for (t of castTracks(); track t.id) {
+                        <button
+                          class="track-menu-item"
+                          [class.active]="castActiveTrackId() === t.id"
+                          (click)="setCastTrack(t.id)"
+                        >
+                          <span class="track-src" [class.emb]="t.source === 'EMB'">{{ t.source }}</span>
+                          <span class="track-menu-lang">{{ t.lang }}</span>
+                          <span class="track-menu-name">{{ t.name }}</span>
+                        </button>
+                      }
+                    </div>
+                  }
+                </div>
+              } @else if (castTracks().length) {
                 <div class="track-picker">
                   <button
                     class="track-btn"
@@ -320,8 +352,8 @@
                       class="track-btn"
                       [class.active]="castActiveTrackId() === t.id"
                       (click)="setCastTrack(t.id)"
-                      [title]="t.name"
-                    >{{ t.lang }}</button>
+                      [title]="t.source + ' · ' + t.name"
+                    ><span class="pill-src" [class.emb]="t.source === 'EMB'">{{ t.source }}</span>{{ t.lang }}</button>
                   }
                 </div>
               }

@@ -46,13 +46,14 @@ export class HomeComponent implements OnInit, OnDestroy {
   castTracks = computed(() => {
     const s = this.selected();
     if (!s) return [];
-    const tracks: Array<{ id: number; lang: string; name: string; url: string }> = [];
-    if (s.subUrl) tracks.push({ id: 1, lang: 'pt', name: 'Legendas', url: s.subUrl });
+    const tracks: Array<{ id: number; lang: string; name: string; url: string; source: 'EXT' | 'EMB' }> = [];
+    if (s.subUrl) tracks.push({ id: 1, lang: 'pt', name: 'Legendas', url: s.subUrl, source: 'EXT' });
     s.embeddedSubtitles.forEach((sub, i) => tracks.push({
-      id:   i + (s.subUrl ? 2 : 1),
-      lang: sub.language || 'und',
-      name: sub.title    || sub.language || `Track ${i + 1}`,
-      url:  sub.url,
+      id:     i + (s.subUrl ? 2 : 1),
+      lang:   sub.language || 'und',
+      name:   sub.title    || sub.language || `Track ${i + 1}`,
+      url:    sub.url,
+      source: 'EMB',
     }));
     return tracks;
   });
@@ -71,6 +72,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   buffered        = 0;
   castUseDirectFile  = false;
   castActiveTrackId  = signal<number | null>(null);
+  showTrackMenu      = signal(false);
 
   private controlsTimer: any;
   private seekDebounce: any;
@@ -388,7 +390,37 @@ export class HomeComponent implements OnInit, OnDestroy {
 
   setCastTrack(id: number | null) {
     this.castActiveTrackId.set(id);
-    if (this.cast.isConnected()) this.cast.activateTrack(id);
+    this.showTrackMenu.set(false);
+
+    // While casting, the receiver handles track switching.
+    if (this.cast.isConnected()) { this.cast.activateTrack(id); return; }
+
+    // Local playback: switch the native <track> to the chosen subtitle. Every track in
+    // castTracks() — the external sidecar and each embedded track (served as VTT by the
+    // backend via /subs/...?track=N) — is selectable here, so embedded subs are watchable
+    // locally, not just the side-file .srt/.vtt.
+    const video = this.playerRef?.nativeElement;
+    if (id === null) {
+      this.subtitlesOn = false;
+      if (this.subtitleTrackEl) this.subtitleTrackEl.track.mode = 'hidden';
+      return;
+    }
+    const track = this.castTracks().find(t => t.id === id);
+    if (!track || !video) return;
+    this.currentSubUrl = track.url;
+    this.subtitlesOn = true;
+    this.attachSubtitleTrack(video, track.url);
+  }
+
+  toggleTrackMenu() { this.showTrackMenu.update(v => !v); }
+  closeTrackMenu()  { this.showTrackMenu.set(false); }
+
+  // Compact label for the popup trigger: the active track's language code, or "Off".
+  activeTrackLabel(): string {
+    const id = this.castActiveTrackId();
+    if (id === null) return 'Off';
+    const t = this.castTracks().find(t => t.id === id);
+    return (t?.lang || 'CC').toUpperCase();
   }
 
   toggleFullscreen() {
@@ -529,6 +561,26 @@ export class HomeComponent implements OnInit, OnDestroy {
     console.log(`[Subtitles] Track (re)attached from: ${subUrl}, mode=${track.track.mode}`);
   }
 
+  // The backend reports, via the X-Hls-Start-Offset response header, the absolute time that
+  // the freshly loaded manifest's local time 0 actually corresponds to. This is NOT always
+  // the requested seek target: when served from the main stream we can only start at a
+  // segment boundary at or before the request. Trusting the requested target instead left
+  // the clock and subtitle cues off by (target − segmentStart) — a constant post-seek
+  // desync, worst on caches whose segment length differs from the current config.
+  private applyStartOffsetHeader(data: any) {
+    const raw = data?.networkDetails?.getResponseHeader?.('X-Hls-Start-Offset');
+    const s = raw != null ? parseFloat(raw) : NaN;
+    if (isNaN(s) || s === this.hlsStartOffset) return;
+    this.hlsStartOffset = s;
+    // The subtitle track may already have been attached (its shift baked in) before this
+    // header landed — hls.js's MANIFEST_LOADED vs MANIFEST_PARSED ordering isn't guaranteed
+    // relative to our handlers — so re-attach it now that the true offset is known.
+    const video = this.playerRef?.nativeElement;
+    if (video && this.currentSubUrl && this.subtitleTrackEl) {
+      this.attachSubtitleTrack(video, this.currentSubUrl);
+    }
+  }
+
   private loadLocal(url: string, subUrl?: string) {
     if (!this.playerRef) return;
     const video = this.playerRef.nativeElement;
@@ -545,6 +597,8 @@ export class HomeComponent implements OnInit, OnDestroy {
       // far) instead of the first listed segment, which is always what we actually want.
       this.hls = new Hls({ enableWorker: true, startPosition: 0 });
       this.hls.attachMedia(video);
+      // Fires before MANIFEST_PARSED, so hlsStartOffset is corrected before subtitles attach.
+      this.hls.on(Hls.Events.MANIFEST_LOADED, (_e, data) => this.applyStartOffsetHeader(data));
       this.hls.on(Hls.Events.MEDIA_ATTACHED, () => this.hls!.loadSource(url));
       this.hls.on(Hls.Events.MANIFEST_PARSED, () => {
         video.play().catch(() => {});
@@ -588,8 +642,9 @@ export class HomeComponent implements OnInit, OnDestroy {
 
     console.log(`[Seek] Reloading from ${startTime}s (attempt ${retries + 1})`);
 
-    // HLS.js normalizes PTS to 0 for every new source. Track the offset so that
-    // onTimeUpdate, seek-buffered checks, and error retries use the correct position.
+    // Provisional offset until the manifest response's X-Hls-Start-Offset header corrects it
+    // (see applyStartOffsetHeader): the true origin is the served segment's start, which is
+    // <= startTime. Used meanwhile by onTimeUpdate, seek-buffered checks, and error retries.
     this.hlsStartOffset = startTime;
 
     if (this.hls) {
@@ -603,6 +658,8 @@ export class HomeComponent implements OnInit, OnDestroy {
     // playlists — without it hls.js jumps to the live edge instead of the requested segment.
     this.hls = new Hls({ enableWorker: true, startPosition: 0 });
     this.hls.attachMedia(video);
+    // Corrects hlsStartOffset to the true segment start before MANIFEST_PARSED reattaches subs.
+    this.hls.on(Hls.Events.MANIFEST_LOADED, (_e, data) => this.applyStartOffsetHeader(data));
 
     // The backend can take up to ~600s to produce a fresh segment for a brand-new
     // seek position under load, so give it a generous ceiling (45s x 4 attempts) before
