@@ -11,6 +11,7 @@ export type MediaItem = {
   title: string;
   url: string;
   directUrl: string;
+  thumbUrl: string;
   contentType: string;
   subUrl?: string | null;
   embeddedSubtitles: EmbeddedSubtitle[];
@@ -32,6 +33,7 @@ export type MediaFileNode = {
   path: string;
   url: string;
   directUrl: string;
+  thumbUrl: string;
   subUrl?: string | null;
   embeddedSubtitles: EmbeddedSubtitle[];
   duration?: number;
@@ -70,6 +72,7 @@ export class MediaService {
       title: file.name,
       url: `${BACKEND_BASE}${file.url}`,
       directUrl: `${BACKEND_BASE}${file.directUrl}`,
+      thumbUrl: `${BACKEND_BASE}${file.thumbUrl}`,
       contentType: 'application/vnd.apple.mpegurl',
       subUrl: file.subUrl ? `${BACKEND_BASE}${file.subUrl}` : file.subUrl,
       embeddedSubtitles: (file.embeddedSubtitles ?? []).map(s => ({

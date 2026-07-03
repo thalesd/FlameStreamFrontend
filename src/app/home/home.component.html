@@ -245,7 +245,14 @@
           <!-- Progress bar -->
           @let ct  = cast.connected() ? cast.castCurrentTime() : currentTime;
           @let dur = (cast.connected() ? cast.castDuration() : 0) || duration;
-          <div class="progress-area" [class.scrubbing]="scrubbing">
+          <div class="progress-area" [class.scrubbing]="scrubbing"
+               (mousemove)="onSeekHover($event)" (mouseleave)="onSeekLeave()">
+            @if (scenePreview(); as prev) {
+              <div class="scene-preview" [style.left.px]="prev.leftPx">
+                <img class="scene-preview-img" [src]="prev.url" alt="" draggable="false" />
+                <span class="scene-preview-time">{{ formatTime(prev.time) }}</span>
+              </div>
+            }
             <div class="progress-track">
               <div class="progress-buffered" [style.width.%]="cast.connected() ? 0 : buffered"></div>
               <div class="progress-fill"     [style.width.%]="dur ? (ct / dur) * 100 : 0"></div>

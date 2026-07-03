@@ -664,6 +664,46 @@ $font-mono:     'DM Mono', monospace;
   }
 }
 
+// ── Scene preview popup (#124) ──────────────────────────────────────────────────
+.scene-preview {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%);
+  z-index: 4;
+  width: 160px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+  animation: scene-preview-in .12s ease-out;
+
+  .scene-preview-img {
+    width: 160px;
+    height: 90px;
+    object-fit: cover;
+    border-radius: 6px;
+    background: #000;
+    border: 1px solid rgba(255,255,255,.18);
+    box-shadow: 0 6px 22px rgba(0,0,0,.55);
+    display: block;
+  }
+  .scene-preview-time {
+    font-size: 12px;
+    font-weight: 600;
+    color: $text-primary;
+    padding: 2px 8px;
+    border-radius: 5px;
+    background: rgba(0,0,0,.78);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@keyframes scene-preview-in {
+  from { opacity: 0; transform: translate(-50%, 4px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
 .progress-track {
   position: absolute;
   left: 0;

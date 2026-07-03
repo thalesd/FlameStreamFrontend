@@ -76,6 +76,8 @@ export class HomeComponent implements OnInit, OnDestroy {
   subtitlesOn     = false;
   subtitlesAvailable = false;
   scrubbing       = false;  // true while the seek bar is being pressed/dragged (#125 slash handle)
+  // Scene preview popup shown while hovering the seek bar (#124).
+  scenePreview = signal<{ time: number; leftPx: number; url: string } | null>(null);
   buffered        = 0;
   castUseDirectFile  = false;
   castActiveTrackId  = signal<number | null>(null);
@@ -113,6 +115,7 @@ export class HomeComponent implements OnInit, OnDestroy {
       this.clearResumeTimer();
       this.resumeInfo.set(null);
       this.clearUpNext();
+      this.scenePreview.set(null);
       const effectiveSub = sel.subUrl || sel.embeddedSubtitles?.[0]?.url;
       setTimeout(() => this.loadLocal(sel.url, effectiveSub ?? undefined));
       this.checkResume(sel);
@@ -372,6 +375,27 @@ export class HomeComponent implements OnInit, OnDestroy {
       v.currentTime = localVal;
     }
   }
+
+  // ── Seek-bar scene preview (#124) ───────────────────────────────────────────
+
+  onSeekHover(e: MouseEvent) {
+    const sel = this.selected();
+    const dur = (this.cast.isConnected() ? this.cast.castDuration() : 0) || this.duration;
+    if (!sel?.thumbUrl || dur <= 0) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    const time = frac * dur;
+    // Snap to the backend's 10s preview grid so the <img> src only changes once per bucket
+    // (one request per grid cell, browser-cached after) rather than once per pixel of hover.
+    const bucket = Math.max(0, Math.floor(time / 10) * 10);
+    // Clamp the (160px-wide) popup so it stays within the bar at the extremes; the time
+    // label still reflects the true hovered position.
+    const halfW = 80;
+    const leftPx = Math.min(Math.max(frac * rect.width, halfW), Math.max(halfW, rect.width - halfW));
+    this.scenePreview.set({ time, leftPx, url: `${sel.thumbUrl}?t=${bucket}` });
+  }
+
+  onSeekLeave() { this.scenePreview.set(null); }
 
   setVolume(e: Event) {
     const val = +(e.target as HTMLInputElement).value;
