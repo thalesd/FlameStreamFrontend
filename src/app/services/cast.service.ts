@@ -128,6 +128,7 @@ export class CastService {
     activeTrackId?: number,
     duration?: number,
     startTime?: number,
+    thumbUrl?: string,
   ) {
     if (!this.isReady()) this.init();
     const session = this.context.getCurrentSession() ?? await this.context.requestSession();
@@ -147,6 +148,7 @@ export class CastService {
       startTime: startTime ?? 0,
       tracks,
       activeTrackId: activeTrackId ?? null,
+      thumbUrl: thumbUrl ?? null,
     });
     console.log('[Cast] Load message sent');
   }

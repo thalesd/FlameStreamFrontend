@@ -682,7 +682,8 @@ export class HomeComponent implements OnInit, OnDestroy {
         tracks.length ? tracks : undefined,
         trackId ?? undefined,
         s.duration ?? 0,
-        resumeAt
+        resumeAt,
+        s.thumbUrl
       );
       console.log('[Cast] Content cast successfully');
       this.playerRef?.nativeElement.pause();
