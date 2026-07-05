@@ -348,20 +348,46 @@ export class HomeComponent implements OnInit, OnDestroy {
   }
 
   // The seek bar is drag-to-preview, commit-on-release (#126): while the pointer is down
-  // `scrubValue` drives the handle so it tracks the cursor exactly (playback timeupdates
-  // no longer fight it), and the actual seek fires once, on release — not on every input
-  // tick, which previously re-transcoded repeatedly and yanked the handle back to the play
-  // position mid-drag.
+  // `scrubValue` drives the handle, and the actual seek fires once, on release — not on
+  // every input tick (which previously re-transcoded repeatedly and yanked the handle back
+  // to the play position mid-drag).
   scrubValue = 0;
+  private pointerScrub = false;
 
-  onScrubStart() {
-    if (this.scrubbing) return; // don't reset the value on key-repeat / re-entry mid-drag
+  // Map a pointer x-coordinate to a time, using the FULL track width — the same math the
+  // scene-preview hover uses. This is why the handle now sits exactly under the cursor:
+  // the native range input maps value to thumbWidth/2…width−thumbWidth/2 (an inset), which
+  // left the visual handle offset from the mouse; reading clientX ourselves removes that.
+  private timeFromClientX(e: PointerEvent): number {
+    const dur = (this.cast.isConnected() ? this.cast.castDuration() : 0) || this.duration;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    return frac * dur;
+  }
+
+  onScrubPointerDown(e: PointerEvent) {
+    this.pointerScrub = true;
+    this.scrubbing = true;
+    this.scrubValue = this.timeFromClientX(e);
+    // Keep receiving moves even if the cursor slips off the thin bar during the drag.
+    try { (e.target as HTMLElement).setPointerCapture(e.pointerId); } catch {}
+  }
+
+  onScrubPointerMove(e: PointerEvent) {
+    if (!this.pointerScrub) return; // ignore plain hover; only track an active drag
+    this.scrubValue = this.timeFromClientX(e);
+  }
+
+  // Keyboard seeking (arrows when the range is focused): the native value is exact here,
+  // so use it — the inset only affects pointer mapping.
+  onScrubKeyDown() {
+    if (this.scrubbing) return;
     this.scrubbing = true;
     this.scrubValue = this.cast.isConnected() ? this.cast.castCurrentTime() : this.currentTime;
   }
 
-  onScrubMove(e: Event) {
-    // Visual only — no seeking until release.
+  onScrubInput(e: Event) {
+    if (this.pointerScrub) return; // pointer path owns scrubValue via clientX
     this.scrubbing = true;
     this.scrubValue = +(e.target as HTMLInputElement).value;
   }
@@ -369,6 +395,7 @@ export class HomeComponent implements OnInit, OnDestroy {
   onScrubEnd() {
     if (!this.scrubbing) return;
     this.scrubbing = false;
+    this.pointerScrub = false;
     this.commitSeek(this.scrubValue);
   }
 
@@ -542,18 +569,18 @@ export class HomeComponent implements OnInit, OnDestroy {
   // ── Up next / auto-advance ──────────────────────────────────────────────────
 
   /**
-   * Locate the next episode: the file that follows `path` among its sibling files in
-   * the same folder. Only searches within folders — top-level files are standalone
-   * titles, not a series, so they never chain into one another.
+   * Locate the adjacent episode: the previous (dir -1) or next (dir +1) file among `path`'s
+   * sibling files in the same folder. Only searches within folders — top-level files are
+   * standalone titles, not a series, so they never chain into one another.
    */
-  private findNextEpisode(path: string): MediaFileNode | null {
+  private findAdjacentEpisode(path: string, dir: 1 | -1): MediaFileNode | null {
     const searchFolder = (children: MediaNode[]): MediaFileNode | null => {
       const idx = children.findIndex(n => n.type === 'file' && n.path === path);
       if (idx !== -1) {
-        for (let i = idx + 1; i < children.length; i++) {
+        for (let i = idx + dir; i >= 0 && i < children.length; i += dir) {
           if (children[i].type === 'file') return children[i] as MediaFileNode;
         }
-        return null; // last episode in this folder
+        return null; // first/last episode in this folder
       }
       for (const n of children) {
         if (n.type === 'folder') {
@@ -572,12 +599,31 @@ export class HomeComponent implements OnInit, OnDestroy {
     return null;
   }
 
+  // Adjacent episodes for the ⏮/⏭ controls (null → button hidden). Recompute when the
+  // selection or the library tree changes.
+  prevEpisode = computed(() => {
+    const sel = this.selected();
+    return sel ? this.findAdjacentEpisode(sel.path, -1) : null;
+  });
+  nextEpisode = computed(() => {
+    const sel = this.selected();
+    return sel ? this.findAdjacentEpisode(sel.path, 1) : null;
+  });
+
+  goToEpisode(node: MediaFileNode | null) {
+    if (!node) return;
+    this.select(node);
+    // If we're casting, push the new episode to the receiver too (the ⏮/⏭ buttons act as
+    // the remote), so episode navigation works on the TV, not just locally.
+    if (this.cast.isConnected()) this.castSelected();
+  }
+
   private maybeQueueNextEpisode() {
     // Casting is driven by the receiver; auto-advance only applies to local playback.
     if (this.cast.isConnected()) return;
     const sel = this.selected();
     if (!sel) return;
-    const next = this.findNextEpisode(sel.path);
+    const next = this.findAdjacentEpisode(sel.path, 1);
     if (!next) return;
 
     this.clearUpNext();

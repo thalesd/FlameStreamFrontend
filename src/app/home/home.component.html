@@ -272,11 +272,12 @@
               type="range" class="progress-input"
               min="0" [max]="dur || 100" step="0.1"
               [value]="pos"
-              (input)="onScrubMove($event)"
-              (pointerdown)="onScrubStart()"
+              (pointerdown)="onScrubPointerDown($event)"
+              (pointermove)="onScrubPointerMove($event)"
               (pointerup)="onScrubEnd()"
               (pointercancel)="onScrubEnd()"
-              (keydown)="onScrubStart()"
+              (input)="onScrubInput($event)"
+              (keydown)="onScrubKeyDown()"
               (keyup)="onScrubEnd()"
               (blur)="onScrubEnd()"
             />
@@ -286,6 +287,13 @@
           <div class="controls-row">
 
             <div class="controls-left">
+              <!-- Previous episode (only within a series folder) -->
+              @if (prevEpisode(); as prev) {
+                <button class="ctrl-btn" (click)="goToEpisode(prev)" [title]="'Episódio anterior: ' + prev.name">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+                </button>
+              }
+
               <!-- Skip back 10s -->
               <button class="ctrl-btn" (click)="skip(-10)" title="−10s">
                 <svg viewBox="0 0 24 24" fill="currentColor">
@@ -311,6 +319,13 @@
                   <text x="12" y="17" text-anchor="middle" font-size="6" fill="currentColor">10</text>
                 </svg>
               </button>
+
+              <!-- Next episode (only within a series folder) -->
+              @if (nextEpisode(); as next) {
+                <button class="ctrl-btn" (click)="goToEpisode(next)" [title]="'Próximo episódio: ' + next.name">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6zM16 6v12h2V6z"/></svg>
+                </button>
+              }
 
               <!-- Volume -->
               <div class="volume-group">
