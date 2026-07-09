@@ -9,6 +9,7 @@ import { MediaService, MediaItem, MediaFileNode, MediaNode } from '../services/m
 import { CastService } from '../services/cast.service';
 import { WatchHistoryService, WatchHistoryEntry } from '../services/watch-history.service';
 import { ProcessingTrackerService } from '../services/processing-tracker.service';
+import { BACKEND_BASE } from '../../../env-cast';
 
 type FlatNode = {
   type: 'folder' | 'file';
@@ -18,6 +19,10 @@ type FlatNode = {
   expanded?: boolean;
   node?: MediaFileNode;
 };
+
+// A horizontal browse row on the home screen: one per top-level folder (a "series"),
+// plus a leading row of loose top-level files.
+type Rail = { title: string; files: MediaFileNode[] };
 
 @Component({
   selector: 'app-home',
@@ -64,6 +69,59 @@ export class HomeComponent implements OnInit, OnDestroy {
     return tracks;
   });
 
+  // ── Home browse (design 3a): hero + poster rails ────────────────────────────
+  // The hero features the most recent continue-watching title, falling back to the
+  // first file in the library so the home never renders an empty hero.
+  featuredFile = computed<MediaFileNode | null>(() => {
+    const cw = this.continueWatchingItems();
+    if (cw.length) return cw[0].file;
+    return this.allFileNodes()[0] ?? null;
+  });
+
+  // One rail per top-level folder (a "series"), with its files flattened in; loose
+  // top-level files collect into a leading "Títulos" rail.
+  libraryRails = computed<Rail[]>(() => {
+    const rails: Rail[] = [];
+    const loose: MediaFileNode[] = [];
+    for (const node of this.tree()) {
+      if (node.type === 'folder') {
+        const files = this.collectFiles(node);
+        if (files.length) rails.push({ title: node.name, files });
+      } else {
+        loose.push(node);
+      }
+    }
+    if (loose.length) rails.unshift({ title: 'Títulos', files: loose });
+    return rails;
+  });
+
+  private collectFiles(folder: MediaNode): MediaFileNode[] {
+    if (folder.type === 'file') return [folder];
+    return folder.children.flatMap(c => this.collectFiles(c));
+  }
+
+  // Name of the folder directly containing the selected file — shown as the player's
+  // "series" subline (design 3b). Null for top-level standalone titles.
+  seriesLabel = computed<string | null>(() => {
+    const path = this.selected()?.path;
+    if (!path) return null;
+    const find = (nodes: MediaNode[], parent: string | null): string | null => {
+      for (const n of nodes) {
+        if (n.type === 'file') { if (n.path === path) return parent; }
+        else { const r = find(n.children, n.name); if (r) return r; }
+      }
+      return null;
+    };
+    return find(this.tree(), null);
+  });
+
+  // Poster/backdrop art for a library file. The backend serves scene thumbnails off
+  // thumbUrl; a mid-ish frame reads better as key art than frame 0 (often black).
+  // Missing/unprocessed files fail the <img> and fall back to the ember gradient tile.
+  posterSrc(node: MediaFileNode): string {
+    return `${BACKEND_BASE}${node.thumbUrl}?t=60`;
+  }
+
   // UI state
   isPlaying       = false;
   isMuted         = false;
@@ -97,8 +155,9 @@ export class HomeComponent implements OnInit, OnDestroy {
   seekProcessing = signal(false);
   seekError      = signal<string | null>(null);
 
-  @ViewChild('player',    { static: false }) playerRef!:    ElementRef<HTMLVideoElement>;
-  @ViewChild('container', { static: false }) containerRef!: ElementRef<HTMLDivElement>;
+  @ViewChild('player',      { static: false }) playerRef!:      ElementRef<HTMLVideoElement>;
+  @ViewChild('container',   { static: false }) containerRef!:   ElementRef<HTMLDivElement>;
+  @ViewChild('progressArea',{ static: false }) progressAreaRef?: ElementRef<HTMLDivElement>;
 
   constructor() {
     // Load locally when a file is selected and cast is not active
@@ -154,6 +213,11 @@ export class HomeComponent implements OnInit, OnDestroy {
 
     this.watchHistoryTimer = setInterval(() => this.saveWatchProgress(), 8000);
     window.addEventListener('beforeunload', this.beforeUnloadHandler);
+    window.addEventListener('keydown', this.keydownHandler);
+    for (const ev of ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart']) {
+      window.addEventListener(ev, this.activityHandler, { passive: true });
+    }
+    this.onUserActivity();   // arm the idle countdown
     this.trackerUnsubscribe = this.tracker.subscribe();
   }
 
@@ -166,6 +230,12 @@ export class HomeComponent implements OnInit, OnDestroy {
     this.clearUpNext();
     clearInterval(this.watchHistoryTimer);
     window.removeEventListener('beforeunload', this.beforeUnloadHandler);
+    window.removeEventListener('keydown', this.keydownHandler);
+    for (const ev of ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart']) {
+      window.removeEventListener(ev, this.activityHandler);
+    }
+    clearTimeout(this.idleTimer);
+    clearInterval(this.fireplaceTimer);
     document.removeEventListener('fullscreenchange', () => {});
     this.trackerUnsubscribe?.();
   }
@@ -180,7 +250,11 @@ export class HomeComponent implements OnInit, OnDestroy {
   onTrackerEnter(e: MouseEvent) {
     clearTimeout(this.trackerCloseTimer);
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    this.trackerPopupPos.set({ top: rect.bottom + 8, left: rect.left });
+    // The tracker lives in the top-right nav now, so anchor the (300px-wide) popup to the
+    // button's right edge and open it leftward — anchoring the left edge ran it off-screen.
+    const POPUP_W = 300;
+    const left = Math.max(8, rect.right - POPUP_W);
+    this.trackerPopupPos.set({ top: rect.bottom + 8, left });
   }
 
   onTrackerLeave() {
@@ -229,6 +303,14 @@ export class HomeComponent implements OnInit, OnDestroy {
 
   openContinueWatching(item: { file: MediaFileNode; entry: WatchHistoryEntry }) {
     this.select(item.file, true);
+  }
+
+  // Return from the player to the browse home. Saves progress and tears down the local
+  // HLS instance so the freed <video> element doesn't keep a stale pipeline attached.
+  closePlayer() {
+    this.saveWatchProgress();
+    this.detachLocal();
+    this.selected.set(null);
   }
 
   // ── Watch history / resume ───────────────────────────────────────────────────
@@ -448,7 +530,138 @@ export class HomeComponent implements OnInit, OnDestroy {
     this.scenePreview.set({ time, leftPx, url: `${sel.thumbUrl}?t=${bucket}` });
   }
 
-  onSeekLeave() { this.scenePreview.set(null); }
+  onSeekLeave() {
+    // Don't clear the popup out from under an active keyboard-seek preview — a stray
+    // mouseleave over the (repositioned) scrubber would otherwise kill the preview
+    // the arrow keys are driving.
+    if (this.arrowSeekActive) return;
+    this.scenePreview.set(null);
+  }
+
+  // ── Keyboard seek preview (← / →, commit with Space) ────────────────────────
+  // Arrow keys don't jump the video — they pause it and scrub a *preview*: each press
+  // nudges the target ±10s and shows the scene thumbnail on the scrubber. Space then
+  // commits the previewed position and resumes playback (Esc cancels). This avoids
+  // firing a costly re-transcode on every keypress while hunting for a spot.
+  arrowSeekActive = false;
+  private readonly ARROW_STEP = 10;
+  private keydownHandler = (e: KeyboardEvent) => this.onGlobalKeydown(e);
+
+  private onGlobalKeydown(e: KeyboardEvent) {
+    if (this.fireplaceActive()) return;   // the screensaver swallows keys to wake, not seek
+    if (!this.selected()) return;
+    // Don't hijack typing (search box, sync-delay entry, etc.).
+    const tag = (document.activeElement?.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea') return;
+
+    switch (e.key) {
+      case 'ArrowRight': e.preventDefault(); this.arrowSeek(1);  break;
+      case 'ArrowLeft':  e.preventDefault(); this.arrowSeek(-1); break;
+      case ' ':
+      case 'Spacebar':
+        e.preventDefault();
+        // Space is dual-purpose: commit a pending preview, or plain play/pause.
+        if (!this.commitArrowSeek()) this.togglePlay();
+        break;
+      case 'Escape':
+        if (this.arrowSeekActive) { e.preventDefault(); this.cancelArrowSeek(); }
+        break;
+    }
+  }
+
+  private arrowSeek(dir: 1 | -1) {
+    // Casting is driven by the receiver's own remote; keep this to local playback.
+    if (this.cast.isConnected()) return;
+    const dur = this.duration;
+    if (!dur) return;
+
+    if (!this.arrowSeekActive) {
+      this.arrowSeekActive = true;
+      this.scrubbing = true;                       // reuse the drag-preview handle rendering
+      this.playerRef?.nativeElement.pause();       // freeze the frame while hunting
+      this.scrubValue = this.currentTime;
+    }
+    this.scrubValue = Math.max(0, Math.min(dur, this.scrubValue + dir * this.ARROW_STEP));
+    this.updateArrowPreview();
+  }
+
+  private updateArrowPreview() {
+    const sel = this.selected();
+    const dur = this.duration;
+    const area = this.progressAreaRef?.nativeElement;
+    if (!sel?.thumbUrl || !dur) return;
+    const frac = this.scrubValue / dur;
+    const bucket = Math.max(0, Math.floor(this.scrubValue / 10) * 10);
+    // Position the popup along the bar the same way the hover preview does; if the bar
+    // isn't laid out yet, fall back to a percentage-based center so it still appears.
+    const width = area?.getBoundingClientRect().width ?? 0;
+    const halfW = 80;
+    const leftPx = width
+      ? Math.min(Math.max(frac * width, halfW), Math.max(halfW, width - halfW))
+      : frac * 100;
+    this.scenePreview.set({ time: this.scrubValue, leftPx, url: `${sel.thumbUrl}?t=${bucket}` });
+  }
+
+  /** Commit a pending keyboard-seek preview. Returns false if none was active. */
+  private commitArrowSeek(): boolean {
+    if (!this.arrowSeekActive) return false;
+    const target = this.scrubValue;
+    this.arrowSeekActive = false;
+    this.scrubbing = false;
+    this.scenePreview.set(null);
+    this.commitSeek(target);
+    this.playerRef?.nativeElement.play().catch(() => {});
+    return true;
+  }
+
+  private cancelArrowSeek() {
+    this.arrowSeekActive = false;
+    this.scrubbing = false;
+    this.scenePreview.set(null);
+    this.playerRef?.nativeElement.play().catch(() => {});
+  }
+
+  // ── Fireplace Mode (design 3d) — idle ambient screen / screensaver ──────────
+  fireplaceActive = signal(false);
+  fireplaceNow    = signal(new Date());
+  private fireplaceTimer: any;
+
+  // Auto-enter after this long without interaction (unless a video is actively playing).
+  private readonly IDLE_MS = 120000;
+  private idleTimer: any;
+  private activityHandler = () => this.onUserActivity();
+
+  enterFireplace() {
+    if (this.fireplaceActive()) return;
+    clearTimeout(this.idleTimer);
+    this.fireplaceActive.set(true);
+    this.fireplaceNow.set(new Date());
+    this.fireplaceTimer = setInterval(() => this.fireplaceNow.set(new Date()), 1000);
+  }
+
+  exitFireplace() {
+    if (!this.fireplaceActive()) return;
+    this.fireplaceActive.set(false);
+    clearInterval(this.fireplaceTimer);
+  }
+
+  // Any interaction wakes the screensaver; otherwise it re-arms the idle countdown. The
+  // timer only fires while nothing is playing, so it never interrupts a film.
+  private onUserActivity() {
+    if (this.fireplaceActive()) { this.exitFireplace(); return; }
+    clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => { if (!this.isPlaying) this.enterFireplace(); }, this.IDLE_MS);
+  }
+
+  fireplaceTime = computed(() => {
+    const d = this.fireplaceNow();
+    return `${d.getHours()}:${d.getMinutes().toString().padStart(2, '0')}`;
+  });
+  fireplaceDate = computed(() => {
+    const s = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
+      .format(this.fireplaceNow());
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  });
 
   onThumbError(url: string) {
     this.thumbFailed.update(set => {
@@ -525,6 +738,58 @@ export class HomeComponent implements OnInit, OnDestroy {
 
   toggleTrackMenu() { this.showTrackMenu.update(v => !v); }
   closeTrackMenu()  { this.showTrackMenu.set(false); }
+
+  // ── Subtitles & captions panel (design 3c) ──────────────────────────────────
+  showSubtitles = signal(false);
+  subtitleDelay = signal(0);                                   // seconds, + = later
+  subtitleSize  = signal<'small' | 'medium' | 'large'>('medium');
+  localSubName  = signal<string | null>(null);                // a manually-added file
+  @ViewChild('subFileInput', { static: false }) subFileInputRef?: ElementRef<HTMLInputElement>;
+
+  // "Included with this title" = embedded tracks; "From your library" = external side-files.
+  includedTracks = computed(() => this.castTracks().filter(t => t.source === 'EMB'));
+  externalTracks = computed(() => this.castTracks().filter(t => t.source === 'EXT'));
+
+  openSubtitles()  { this.showSubtitles.set(true); }
+  closeSubtitles() { this.showSubtitles.set(false); }
+
+  private reattachActiveSub() {
+    const video = this.playerRef?.nativeElement;
+    if (video && this.currentSubUrl && this.subtitleTrackEl) {
+      this.attachSubtitleTrack(video, this.currentSubUrl);
+    }
+  }
+
+  adjustSubtitleDelay(delta: number) {
+    this.subtitleDelay.update(d => Math.round((d + delta) * 10) / 10);
+    this.reattachActiveSub();
+  }
+  resetSubtitleDelay() { this.subtitleDelay.set(0); this.reattachActiveSub(); }
+
+  setSubtitleSize(size: 'small' | 'medium' | 'large') { this.subtitleSize.set(size); }
+  subtitleSizeLabel(): string {
+    return { small: 'Pequeno', medium: 'Médio', large: 'Grande' }[this.subtitleSize()];
+  }
+
+  promptAddSubtitle() { this.subFileInputRef?.nativeElement.click(); }
+
+  onSubtitleFilePicked(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';                                          // allow re-picking same file
+    if (!file) return;
+    // <track> renders WebVTT only; .srt would need backend conversion (a later feature).
+    if (!/\.vtt$/i.test(file.name)) {
+      alert('Por enquanto, apenas arquivos .vtt podem ser carregados manualmente.');
+      return;
+    }
+    const video = this.playerRef?.nativeElement;
+    if (!video) return;
+    this.currentSubUrl = URL.createObjectURL(file);
+    this.subtitlesOn = true;
+    this.attachSubtitleTrack(video, this.currentSubUrl);
+    this.localSubName.set(file.name);
+  }
 
   // Compact label for the popup trigger: the active track's language code, or "Off".
   activeTrackLabel(): string {
@@ -761,8 +1026,12 @@ export class HomeComponent implements OnInit, OnDestroy {
     // tracks that reset). Native cue matching only ever compares against currentTime
     // directly, so the backend must shift cue times by the same offset or they'd never
     // line up with what's actually on screen post-seek.
-    track.src = this.hlsStartOffset > 0
-      ? `${subUrl}${subUrl.includes('?') ? '&' : '?'}shift=${this.hlsStartOffset}`
+    // Effective shift = seek offset minus the user's sync delay (design 3c). A positive
+    // delay pushes cues later on screen. Locally-loaded blob: tracks (Add a file…) can't
+    // carry a query string, so they're attached as-is.
+    const effShift = this.hlsStartOffset - this.subtitleDelay();
+    track.src = (effShift !== 0 && !subUrl.startsWith('blob:'))
+      ? `${subUrl}${subUrl.includes('?') ? '&' : '?'}shift=${effShift}`
       : subUrl;
     track.addEventListener('load', () => console.log('[Subtitles] Track loaded successfully'));
     track.addEventListener('error', (e: any) => console.error('[Subtitles] Failed to load track:', e));

@@ -1,164 +1,198 @@
-<div class="shell">
+<div class="cf-app">
 
-  <!-- ═══ SIDEBAR ═══════════════════════════════════════════════════════════ -->
-  <aside class="sidebar" [class.collapsed]="!showSidebar">
-    <div class="sidebar-header">
-      <span class="logo">
-        <img class="logo-mark" src="CozyFlameLogo.svg" alt="" aria-hidden="true" />
-        CozyFlame Stream
-      </span>
-      <div class="header-actions">
-        <div class="tracker-wrap" (mouseenter)="onTrackerEnter($event)" (mouseleave)="onTrackerLeave()">
-          <button class="icon-btn" title="Processamento em andamento">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 20V10M18 20V4M6 20v-4"/>
-            </svg>
-            @if (tracker.jobs().length) {
-              <span class="tracker-dot"></span>
-            }
-          </button>
-          @if (trackerPopupPos(); as pos) {
-            <div class="tracker-popup" [style.top.px]="pos.top" [style.left.px]="pos.left"
-                 (mouseenter)="keepTrackerOpen()" (mouseleave)="onTrackerLeave()">
-              @if (!tracker.jobs().length) {
-                <div class="tracker-empty">Nenhum processamento ativo</div>
-              } @else {
-                @for (job of tracker.jobs(); track job.key) {
-                  <div class="tracker-job">
-                    <div class="tracker-job-header">
-                      <span class="tracker-job-title">{{ fileNameFor(job.path) }}</span>
-                      <span class="tracker-job-type">{{ job.jobType === 'main' ? 'completo' : 'seek' }}</span>
-                    </div>
-                    <div class="tracker-progress">
-                      <div class="tracker-progress-fill" [style.width.%]="job.percentComplete"></div>
-                    </div>
-                    <div class="tracker-job-footer">
-                      <span>{{ job.percentComplete.toFixed(0) }}% · {{ formatTime(job.elapsedSeconds) }}</span>
-                      <button class="tracker-cancel" (click)="tracker.cancel(job.key)">Cancelar</button>
-                    </div>
-                  </div>
-                }
-              }
-            </div>
-          }
+  <!-- ═══ BROWSE HOME (design 3a) ══════════════════════════════════════════ -->
+  @if (!selected()) {
+    <div class="cf-home">
+
+      <!-- ambient background -->
+      <div class="cf-home-glow" aria-hidden="true"></div>
+      <img class="cf-home-watermark" src="CozyFlameLogoColor.svg" alt="" aria-hidden="true" />
+
+      <!-- ─── Top nav bar ──────────────────────────────────────────────────── -->
+      <header class="cf-nav">
+        <div class="cf-brand">
+          <img class="cf-brand-mark" src="CozyFlameLogoColor.svg" alt="" aria-hidden="true" />
+          <span class="cf-brand-name">COZYFLAME</span>
         </div>
-        <button class="icon-btn" (click)="showSidebar = false" title="Fechar">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M18 6L6 18M6 6l12 12"/>
-          </svg>
-        </button>
-      </div>
-    </div>
 
-    <div class="library-label">Biblioteca</div>
+        <nav class="cf-nav-links">
+          <a class="cf-nav-link active">Home</a>
+          <a class="cf-nav-link">Films</a>
+          <a class="cf-nav-link">Series</a>
+          <a class="cf-nav-link">List</a>
+        </nav>
 
-    <ul class="media-list">
-      @for (flat of flatList(); track flat.path) {
-        @if (flat.type === 'folder') {
-          <li class="media-folder" [style.padding-left.px]="flat.level * 14 + 10" (click)="toggleFolder(flat.path)">
-            <span class="folder-arrow" [class.open]="flat.expanded">
-              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
-            </span>
-            <svg class="folder-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
-            <span class="item-title">{{ flat.name }}</span>
-          </li>
-        } @else {
-          <li
-            class="media-item"
-            [class.active]="selected()?.url === flat.node?.url"
-            [style.padding-left.px]="flat.level * 14 + 10"
-            (click)="select(flat.node!)"
-          >
-            <div class="item-thumb">
-              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-            </div>
-            <div class="item-meta">
-              <span class="item-title">{{ flat.name }}</span>
-              @if (flat.node?.subUrl || flat.node?.embeddedSubtitles?.length) {
-                <span class="item-badge">CC</span>
+        <div class="cf-nav-right">
+          <button class="cf-fireplace-btn" (click)="enterFireplace()" title="Modo Lareira">
+            <span class="cf-fireplace-dot" aria-hidden="true"></span>
+            Fireplace Mode
+          </button>
+
+          <!-- Processing tracker -->
+          <div class="cf-tracker" (mouseenter)="onTrackerEnter($event)" (mouseleave)="onTrackerLeave()">
+            <button class="cf-icon-btn" title="Processamento em andamento">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 20V10M18 20V4M6 20v-4"/>
+              </svg>
+              @if (tracker.jobs().length) {
+                <span class="cf-tracker-badge"></span>
               }
+            </button>
+            @if (trackerPopupPos(); as pos) {
+              <div class="cf-tracker-popup" [style.top.px]="pos.top" [style.left.px]="pos.left"
+                   (mouseenter)="keepTrackerOpen()" (mouseleave)="onTrackerLeave()">
+                @if (!tracker.jobs().length) {
+                  <div class="cf-tracker-empty">Nenhum processamento ativo</div>
+                } @else {
+                  @for (job of tracker.jobs(); track job.key) {
+                    <div class="cf-tracker-job">
+                      <div class="cf-tracker-job-head">
+                        <span class="cf-tracker-job-title">{{ fileNameFor(job.path) }}</span>
+                        <span class="cf-tracker-job-type">{{ job.jobType === 'main' ? 'completo' : 'seek' }}</span>
+                      </div>
+                      <div class="cf-tracker-bar">
+                        <div class="cf-tracker-bar-fill" [style.width.%]="job.percentComplete"></div>
+                      </div>
+                      <div class="cf-tracker-job-foot">
+                        <span>{{ job.percentComplete.toFixed(0) }}% · {{ formatTime(job.elapsedSeconds) }}</span>
+                        <button class="cf-tracker-cancel" (click)="tracker.cancel(job.key)">Cancelar</button>
+                      </div>
+                    </div>
+                  }
+                }
+              </div>
+            }
+          </div>
+
+          <div class="cf-avatar" aria-hidden="true"></div>
+        </div>
+      </header>
+
+      <!-- ─── Hero ─────────────────────────────────────────────────────────── -->
+      @if (featuredFile(); as feat) {
+        <section class="cf-hero">
+          <div class="cf-hero-body">
+            <div class="cf-hero-kicker">Burning bright tonight</div>
+            <h1 class="cf-hero-title">{{ feat.name }}</h1>
+            <div class="cf-hero-meta">
+              @if (feat.duration) { <span>{{ formatTime(feat.duration) }}</span> }
+              @if (feat.subUrl || feat.embeddedSubtitles.length) { <span class="cf-hero-cc">CC</span> }
             </div>
-            <div class="item-actions">
-              @if (jobForPath(flat.node!.path); as job) {
-                <span class="item-processing" [title]="job.percentComplete.toFixed(0) + '%'">
-                  <svg class="item-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="9"/></svg>
-                </span>
-              } @else if (flat.node?.ready) {
-                <span class="item-ready" title="Já processado">
-                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg>
-                </span>
-              } @else {
-                <button class="item-action-btn" (click)="preprocessFile(flat.node!, $event)" title="Pré-processar">
-                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                </button>
-              }
-              @if ((flat.node?.cachedBytes ?? 0) > 0) {
-                <button
-                  class="item-action-btn"
-                  [class.disabled]="selected()?.path === flat.node?.path"
-                  (click)="deleteCache(flat.node!, $event)"
-                  [title]="'Liberar ' + formatBytes(flat.node!.cachedBytes ?? 0)"
-                >
-                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
-                </button>
-              }
+            <div class="cf-hero-actions">
+              <button class="cf-btn-play" (click)="select(feat)">
+                <svg viewBox="0 0 14 16" width="14" height="16"><polygon points="0,0 14,8 0,16" fill="currentColor"/></svg>
+                PLAY
+              </button>
+              <button class="cf-btn-add" title="Em breve"><span>+</span></button>
             </div>
-          </li>
-        }
+          </div>
+
+          <div class="cf-hero-art">
+            @if (!thumbFailed().has(posterSrc(feat))) {
+              <img class="cf-hero-art-img" [src]="posterSrc(feat)" alt="" decoding="async"
+                   (error)="onThumbError(posterSrc(feat))" />
+            }
+            <span class="cf-hero-art-label">{{ feat.name }}</span>
+          </div>
+        </section>
       }
-    </ul>
-  </aside>
 
-  <!-- ═══ MAIN ═══════════════════════════════════════════════════════════════ -->
-  <main class="stage">
+      <!-- ─── Rails ────────────────────────────────────────────────────────── -->
+      <div class="cf-rails">
 
-    @if (!showSidebar) {
-      <button
-        class="sidebar-toggle"
-        (click)="showSidebar = true"
-        title="Abrir biblioteca"
-      >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>
-        </svg>
-      </button>
-    }
-
-    @if (!selected()) {
-      <div class="empty-state">
         @if (continueWatchingItems().length) {
-          <div class="continue-watching">
-            <div class="continue-watching-label">Continuar assistindo</div>
-            <div class="continue-watching-row">
+          <section class="cf-rail">
+            <h2 class="cf-rail-title">Continuar assistindo</h2>
+            <div class="cf-rail-row">
               @for (item of continueWatchingItems(); track item.file.path) {
-                <div class="continue-watching-tile" (click)="openContinueWatching(item)">
-                  <div class="cw-thumb">
-                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                    <div class="cw-progress">
-                      <div
-                        class="cw-progress-fill"
-                        [style.width.%]="item.entry.durationSeconds ? (item.entry.positionSeconds / item.entry.durationSeconds) * 100 : 0"
-                      ></div>
+                <button class="cf-tile" (click)="openContinueWatching(item)">
+                  <div class="cf-tile-art">
+                    @if (!thumbFailed().has(posterSrc(item.file))) {
+                      <img class="cf-tile-img" [src]="posterSrc(item.file)" alt="" loading="lazy" decoding="async"
+                           (error)="onThumbError(posterSrc(item.file))" />
+                    }
+                    <span class="cf-tile-label">{{ item.file.name }}</span>
+                    <div class="cf-tile-progress">
+                      <div class="cf-tile-progress-fill"
+                           [style.width.%]="item.entry.durationSeconds ? (item.entry.positionSeconds / item.entry.durationSeconds) * 100 : 0"></div>
                     </div>
                   </div>
-                  <span class="cw-title">{{ item.file.name }}</span>
+                  <div class="cf-tile-meta">{{ formatTime(item.entry.positionSeconds) }} · assistido</div>
+                </button>
+              }
+            </div>
+          </section>
+        }
+
+        @for (rail of libraryRails(); track rail.title) {
+          <section class="cf-rail">
+            <h2 class="cf-rail-title">{{ rail.title }}</h2>
+            <div class="cf-rail-row">
+              @for (node of rail.files; track node.path) {
+                <div class="cf-tile" [class.active]="selected()?.path === node.path" (click)="select(node)">
+                  <div class="cf-tile-art">
+                    @if (!thumbFailed().has(posterSrc(node))) {
+                      <img class="cf-tile-img" [src]="posterSrc(node)" alt=""
+                           (error)="onThumbError(posterSrc(node))" />
+                    }
+                    <span class="cf-tile-label">{{ node.name }}</span>
+
+                    <!-- per-file actions (hover) -->
+                    <div class="cf-tile-actions" (click)="$event.stopPropagation()">
+                      @if (jobForPath(node.path); as job) {
+                        <span class="cf-tile-badge processing" [title]="job.percentComplete.toFixed(0) + '%'">
+                          <svg class="cf-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="9"/></svg>
+                        </span>
+                      } @else if (node.ready) {
+                        <span class="cf-tile-badge ready" title="Já processado">
+                          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg>
+                        </span>
+                      } @else {
+                        <button class="cf-tile-action" (click)="preprocessFile(node, $event)" title="Pré-processar">
+                          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                        </button>
+                      }
+                      @if ((node.cachedBytes ?? 0) > 0) {
+                        <button class="cf-tile-action"
+                                [class.disabled]="selected()?.path === node.path"
+                                (click)="deleteCache(node, $event)"
+                                [title]="'Liberar ' + formatBytes(node.cachedBytes ?? 0)">
+                          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                        </button>
+                      }
+                    </div>
+                  </div>
+                  <div class="cf-tile-meta">
+                    {{ node.name }}
+                    @if (node.subUrl || node.embeddedSubtitles.length) { <span class="cf-cc-dot">CC</span> }
+                  </div>
                 </div>
               }
             </div>
+          </section>
+        }
+
+        @if (!libraryRails().length && !continueWatchingItems().length) {
+          <div class="cf-empty">
+            <div class="cf-empty-icon">🔥</div>
+            <p>Sua biblioteca está vazia</p>
           </div>
         }
-        <div class="empty-icon">🎬</div>
-        <p>Selecione um título para começar</p>
       </div>
-    }
 
-    @if (selected()) {
-      <!-- ─── Player wrapper ───────────────────────────────────────────────── -->
+    </div>
+  }
+
+  <!-- ═══ PLAYER (restyled in phase 2) ═════════════════════════════════════ -->
+  @if (selected()) {
+    <main class="stage">
       <div
         #container
         class="player-container"
         [class.playing]="cast.connected() ? cast.castPlaying() : isPlaying"
         [class.controls-hidden]="!showControls && (cast.connected() ? cast.castPlaying() : isPlaying)"
+        [class.subsize-small]="subtitleSize() === 'small'"
+        [class.subsize-large]="subtitleSize() === 'large'"
         (mousemove)="onMouseMove()"
         (mouseleave)="showControls = true"
       >
@@ -180,7 +214,7 @@
         >
         </video>
 
-        <!-- Cast overlay — visual indicator while casting, controls sit above it -->
+        <!-- Cast overlay -->
         @if (cast.connected()) {
           <div class="cast-overlay">
             <svg viewBox="0 0 24 24" fill="currentColor" class="cast-overlay-icon">
@@ -191,14 +225,21 @@
           </div>
         }
 
-        <!-- Overlay de título (local playback only) -->
+        <!-- Top bar (local playback only): back · logo · title / series (design 3b) -->
         @if (!cast.connected()) {
-          <div class="title-overlay">
-            <span>{{ selected()?.title }}</span>
+          <div class="cf-ptop">
+            <button class="cf-ptop-btn" (click)="closePlayer()" title="Voltar à biblioteca">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <img class="cf-ptop-logo" src="CozyFlameLogoColor.svg" alt="" aria-hidden="true" />
+            <div class="cf-ptop-titles">
+              <div class="cf-ptop-title">{{ selected()?.title }}</div>
+              @if (seriesLabel(); as s) { <div class="cf-ptop-sub">{{ s }}</div> }
+            </div>
           </div>
         }
 
-        <!-- Banner de retomada — exibido quando há progresso salvo para este título -->
+        <!-- Banner de retomada -->
         @if (!cast.connected() && resumeInfo()) {
           <div class="resume-banner">
             <span>Continuar de {{ resumeInfo()!.label }}?</span>
@@ -209,7 +250,7 @@
           </div>
         }
 
-        <!-- Próximo episódio — exibido ao terminar um episódio com um próximo na mesma pasta -->
+        <!-- Próximo episódio -->
         @if (!cast.connected() && upNext(); as next) {
           <div class="upnext-banner">
             <div class="upnext-info">
@@ -226,7 +267,7 @@
           </div>
         }
 
-        <!-- Overlay de processamento — exibido enquanto um seek aguarda o backend gerar o trecho -->
+        <!-- Overlay de processamento (seek) -->
         @if (!cast.connected() && (seekProcessing() || seekError())) {
           <div class="seek-overlay">
             @if (seekProcessing()) {
@@ -242,13 +283,12 @@
         <!-- ─── Controles ──────────────────────────────────────────────────── -->
         <div class="controls">
 
-          <!-- Progress bar -->
           @let ct  = cast.connected() ? cast.castCurrentTime() : currentTime;
           @let dur = (cast.connected() ? cast.castDuration() : 0) || duration;
-          <!-- While scrubbing, the handle follows scrubValue (the cursor) rather than the
-               live play position, and the seek only commits on release (#126). -->
           @let pos = scrubbing ? scrubValue : ct;
-          <div class="progress-area" [class.scrubbing]="scrubbing"
+          <div class="cf-scrub-row">
+          <span class="cf-time">{{ formatTime(pos) }}</span>
+          <div #progressArea class="progress-area" [class.scrubbing]="scrubbing"
                (mousemove)="onSeekHover($event)" (mouseleave)="onSeekLeave()">
             @if (scenePreview(); as prev) {
               <div class="scene-preview" [style.left.px]="prev.leftPx">
@@ -282,27 +322,19 @@
               (blur)="onScrubEnd()"
             />
           </div>
+          <span class="cf-time">{{ formatTime(dur) }}</span>
+          </div>
+          <!-- /cf-scrub-row -->
 
-          <!-- Botões + tempo + volume -->
           <div class="controls-row">
 
             <div class="controls-left">
-              <!-- Previous episode (only within a series folder) -->
               @if (prevEpisode(); as prev) {
                 <button class="ctrl-btn" (click)="goToEpisode(prev)" [title]="'Episódio anterior: ' + prev.name">
                   <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
                 </button>
               }
 
-              <!-- Skip back 10s -->
-              <button class="ctrl-btn" (click)="skip(-10)" title="−10s">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
-                  <text x="12" y="17" text-anchor="middle" font-size="6" fill="currentColor">10</text>
-                </svg>
-              </button>
-
-              <!-- Play/pause -->
               @let playing = cast.connected() ? cast.castPlaying() : isPlaying;
               <button class="ctrl-btn play-btn" (click)="togglePlay()">
                 @if (!playing) {
@@ -312,20 +344,30 @@
                 }
               </button>
 
-              <!-- Skip forward 10s -->
-              <button class="ctrl-btn" (click)="skip(10)" title="+10s">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8z"/>
-                  <text x="12" y="17" text-anchor="middle" font-size="6" fill="currentColor">10</text>
-                </svg>
-              </button>
-
-              <!-- Next episode (only within a series folder) -->
               @if (nextEpisode(); as next) {
                 <button class="ctrl-btn" (click)="goToEpisode(next)" [title]="'Próximo episódio: ' + next.name">
                   <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6zM16 6v12h2V6z"/></svg>
                 </button>
               }
+            </div>
+
+            <div class="controls-right">
+              <!-- Legendas (abre o painel — design 3c) -->
+              <button
+                class="ctrl-btn sub-btn"
+                [class.active]="subtitlesOn"
+                [class.unavailable]="!subtitlesAvailable"
+                (click)="subtitlesAvailable && openSubtitles()"
+                [title]="subtitlesAvailable ? 'Legendas' : 'Sem legenda'"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-9 8H9v-1H7v2h2v1H6v-4h5v2zm7 0h-2v-1h-2v2h2v1h-3v-4h5v2z"/></svg>
+                <span class="ctrl-label">Legendas</span>
+              </button>
+
+              <!-- Áudio (seleção de faixa — em breve) -->
+              <button class="ctrl-btn" disabled title="Faixas de áudio (em breve)">
+                <span class="ctrl-label">Áudio</span>
+              </button>
 
               <!-- Volume -->
               <div class="volume-group">
@@ -346,27 +388,8 @@
                 />
               </div>
 
-              <!-- Tempo -->
-              <span class="time-display">
-                {{ formatTime(pos) }} / {{ formatTime(dur) }}
-              </span>
-            </div>
-
-            <div class="controls-right">
-              <!-- Legendas -->
-              <button
-                class="ctrl-btn sub-btn"
-                [class.active]="subtitlesOn"
-                [class.unavailable]="!subtitlesAvailable"
-                (click)="subtitlesAvailable && toggleSubtitles()"
-                [title]="subtitlesAvailable ? (subtitlesOn ? 'Desativar legendas' : 'Ativar legendas') : 'Sem legenda'"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-9 8H9v-1H7v2h2v1H6v-4h5v2zm7 0h-2v-1h-2v2h2v1h-3v-4h5v2z"/></svg>
-              </button>
-
               <!-- Subtitle track picker (cast) -->
               @if (castTracks().length > 2) {
-                <!-- Many tracks (e.g. multi-sub WEB-DL rips): collapse into a click popup -->
                 <div class="track-picker">
                   <button
                     class="track-btn track-toggle"
@@ -441,9 +464,103 @@
         </div>
         <!-- /controls -->
 
+        <!-- ─── Subtitles & captions panel (design 3c) ──────────────────────── -->
+        <input #subFileInput type="file" accept=".vtt,.srt" hidden (change)="onSubtitleFilePicked($event)" />
+        @if (showSubtitles()) {
+          <div class="cf-subs-backdrop" (click)="closeSubtitles()"></div>
+          <div class="cf-subs-panel">
+            <div class="cf-subs-head">
+              <div class="cf-subs-title">Legendas &amp; Captions</div>
+              <button class="cf-subs-close" (click)="closeSubtitles()" title="Fechar">×</button>
+            </div>
+
+            <!-- Included with this title = embedded tracks -->
+            <div class="cf-subs-label">Incluídas neste título</div>
+            <div class="cf-subs-chips">
+              <button class="cf-subs-chip" [class.active]="castActiveTrackId() === null"
+                      (click)="setCastTrack(null)">Off</button>
+              @for (t of includedTracks(); track t.id) {
+                <button class="cf-subs-chip" [class.active]="castActiveTrackId() === t.id"
+                        (click)="setCastTrack(t.id)">
+                  {{ t.name }}@if (castActiveTrackId() === t.id) { <span class="cf-subs-check"> ✓</span> }
+                </button>
+              }
+              @if (!includedTracks().length) {
+                <span class="cf-subs-none">Nenhuma faixa embutida</span>
+              }
+            </div>
+
+            <!-- From your library = external side-files -->
+            <div class="cf-subs-label">Da sua biblioteca (externas)</div>
+            <div class="cf-subs-chips">
+              <button class="cf-subs-chip dashed" (click)="promptAddSubtitle()">
+                <span class="cf-subs-plus">+</span>Adicionar arquivo…
+              </button>
+              @for (t of externalTracks(); track t.id) {
+                <button class="cf-subs-chip file" [class.active]="castActiveTrackId() === t.id"
+                        (click)="setCastTrack(t.id)">
+                  <svg viewBox="0 0 14 16" width="13" height="15"><path d="M2 0.75h6L13 5.5V15.25H2Z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 0.75V5.5h5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+                  {{ t.name }}
+                </button>
+              }
+              @if (localSubName(); as name) {
+                <span class="cf-subs-chip file active">
+                  <svg viewBox="0 0 14 16" width="13" height="15"><path d="M2 0.75h6L13 5.5V15.25H2Z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 0.75V5.5h5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+                  {{ name }}
+                </span>
+              }
+            </div>
+
+            <!-- Sync delay + text size -->
+            <div class="cf-subs-foot">
+              <span class="cf-subs-foot-label">Atraso</span>
+              <button class="cf-subs-step" (click)="adjustSubtitleDelay(-0.5)" title="−0.5s">−</button>
+              <button class="cf-subs-delay" (click)="resetSubtitleDelay()" title="Zerar">{{ subtitleDelay() > 0 ? '+' : '' }}{{ subtitleDelay().toFixed(1) }}s</button>
+              <button class="cf-subs-step" (click)="adjustSubtitleDelay(0.5)" title="+0.5s">+</button>
+
+              <span class="cf-subs-foot-label size">Tamanho</span>
+              <div class="cf-subs-sizes">
+                <button [class.active]="subtitleSize() === 'small'"  (click)="setSubtitleSize('small')">A</button>
+                <button [class.active]="subtitleSize() === 'medium'" (click)="setSubtitleSize('medium')">A</button>
+                <button [class.active]="subtitleSize() === 'large'"  (click)="setSubtitleSize('large')">A</button>
+              </div>
+            </div>
+          </div>
+        }
+
       </div>
       <!-- /player-container -->
-    }
+    </main>
+  }
 
-  </main>
+  <!-- ═══ FIREPLACE MODE (design 3d) — idle ambient screensaver ═════════════ -->
+  @if (fireplaceActive()) {
+    <div class="cf-fire" (click)="exitFireplace()">
+      <div class="cf-fire-glow" aria-hidden="true"></div>
+      <span class="cf-fire-ember e1" aria-hidden="true"></span>
+      <span class="cf-fire-ember e2" aria-hidden="true"></span>
+      <span class="cf-fire-ember e3" aria-hidden="true"></span>
+
+      <div class="cf-fire-brand">
+        <img src="CozyFlameLogoColor.svg" alt="" aria-hidden="true" />
+        <span>CozyFlame</span>
+      </div>
+
+      <div class="cf-fire-clock">
+        <div class="cf-fire-time">{{ fireplaceTime() }}</div>
+        <div class="cf-fire-date">{{ fireplaceDate() }}</div>
+      </div>
+
+      <img class="cf-fire-logo" src="CozyFlameLogoColor.svg" alt="" aria-hidden="true" />
+
+      <div class="cf-fire-foot">
+        <div class="cf-fire-sound">
+          <span class="cf-fire-bars" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+          Crackling Fire · soundscape on
+        </div>
+        <div class="cf-fire-hint">Pressione qualquer tecla para navegar</div>
+      </div>
+    </div>
+  }
+
 </div>
