@@ -1,0 +1,30 @@
+@if (lib.featuredFile(); as feat) {
+  <section class="cf-hero">
+    <div class="cf-hero-body">
+      <div class="cf-hero-kicker">Burning bright tonight</div>
+      <h1 class="cf-hero-title">{{ feat.name }}</h1>
+      <div class="cf-hero-meta">
+        @if (feat.duration) { <span>{{ formatTime(feat.duration) }}</span> }
+        @if (feat.subUrl || feat.embeddedSubtitles.length) { <span class="cf-hero-cc">CC</span> }
+      </div>
+      <div class="cf-hero-actions">
+        <button class="cf-btn-play" (click)="play(feat)">
+          <svg viewBox="0 0 14 16" width="14" height="16"><polygon points="0,0 14,8 0,16" fill="currentColor"/></svg>
+          PLAY
+        </button>
+        <button class="cf-btn-add" [class.on]="lib.inList(feat)" (click)="toggleList(feat)"
+                [title]="lib.inList(feat) ? 'Na sua lista' : 'Adicionar à lista'">
+          <span>{{ lib.inList(feat) ? '✓' : '+' }}</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="cf-hero-art">
+      @if (!lib.thumbFailed().has(posterSrc(feat))) {
+        <img class="cf-hero-art-img" [src]="posterSrc(feat)" alt="" decoding="async"
+             (error)="onThumbError(posterSrc(feat))" />
+      }
+      <span class="cf-hero-art-label">{{ feat.name }}</span>
+    </div>
+  </section>
+}

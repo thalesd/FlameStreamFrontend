@@ -1,0 +1,62 @@
+<input #subFileInput type="file" accept=".vtt,.srt" hidden (change)="onFilePicked($event)" />
+@if (state.showSubtitles()) {
+  <div class="cf-subs-backdrop" (click)="state.closeSubtitles()"></div>
+  <div class="cf-subs-panel">
+    <div class="cf-subs-head">
+      <div class="cf-subs-title">Legendas &amp; Captions</div>
+      <button class="cf-subs-close" (click)="state.closeSubtitles()" title="Fechar">×</button>
+    </div>
+
+    <!-- Included with this title = embedded tracks -->
+    <div class="cf-subs-label">Incluídas neste título</div>
+    <div class="cf-subs-chips">
+      <button class="cf-subs-chip" [class.active]="state.castActiveTrackId() === null"
+              (click)="state.setCastTrack(null)">Off</button>
+      @for (t of state.includedTracks(); track t.id) {
+        <button class="cf-subs-chip" [class.active]="state.castActiveTrackId() === t.id"
+                (click)="state.setCastTrack(t.id)">
+          {{ t.name }}@if (state.castActiveTrackId() === t.id) { <span class="cf-subs-check"> ✓</span> }
+        </button>
+      }
+      @if (!state.includedTracks().length) {
+        <span class="cf-subs-none">Nenhuma faixa embutida</span>
+      }
+    </div>
+
+    <!-- From your library = external side-files -->
+    <div class="cf-subs-label">Da sua biblioteca (externas)</div>
+    <div class="cf-subs-chips">
+      <button class="cf-subs-chip dashed" (click)="promptAddSubtitle()">
+        <span class="cf-subs-plus">+</span>Adicionar arquivo…
+      </button>
+      @for (t of state.externalTracks(); track t.id) {
+        <button class="cf-subs-chip file" [class.active]="state.castActiveTrackId() === t.id"
+                (click)="state.setCastTrack(t.id)">
+          <svg viewBox="0 0 14 16" width="13" height="15"><path d="M2 0.75h6L13 5.5V15.25H2Z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 0.75V5.5h5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+          {{ t.name }}
+        </button>
+      }
+      @if (state.localSubName(); as name) {
+        <span class="cf-subs-chip file active">
+          <svg viewBox="0 0 14 16" width="13" height="15"><path d="M2 0.75h6L13 5.5V15.25H2Z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 0.75V5.5h5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+          {{ name }}
+        </span>
+      }
+    </div>
+
+    <!-- Sync delay + text size -->
+    <div class="cf-subs-foot">
+      <span class="cf-subs-foot-label">Atraso</span>
+      <button class="cf-subs-step" (click)="state.adjustSubtitleDelay(-0.5)" title="−0.5s">−</button>
+      <button class="cf-subs-delay" (click)="state.resetSubtitleDelay()" title="Zerar">{{ state.subtitleDelay() > 0 ? '+' : '' }}{{ state.subtitleDelay().toFixed(1) }}s</button>
+      <button class="cf-subs-step" (click)="state.adjustSubtitleDelay(0.5)" title="+0.5s">+</button>
+
+      <span class="cf-subs-foot-label size">Tamanho</span>
+      <div class="cf-subs-sizes">
+        <button [class.active]="state.subtitleSize() === 'small'"  (click)="state.setSubtitleSize('small')">A</button>
+        <button [class.active]="state.subtitleSize() === 'medium'" (click)="state.setSubtitleSize('medium')">A</button>
+        <button [class.active]="state.subtitleSize() === 'large'"  (click)="state.setSubtitleSize('large')">A</button>
+      </div>
+    </div>
+  </div>
+}

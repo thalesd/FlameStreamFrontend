@@ -1,0 +1,34 @@
+<div class="cf-tracker" (mouseenter)="onEnter($event)" (mouseleave)="onLeave()">
+  <button class="cf-icon-btn" title="Processamento em andamento">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M12 20V10M18 20V4M6 20v-4"/>
+    </svg>
+    @if (tracker.jobs().length) {
+      <span class="cf-tracker-badge"></span>
+    }
+  </button>
+  @if (trackerPopupPos(); as pos) {
+    <div class="cf-tracker-popup" [style.top.px]="pos.top" [style.left.px]="pos.left"
+         (mouseenter)="keepOpen()" (mouseleave)="onLeave()">
+      @if (!tracker.jobs().length) {
+        <div class="cf-tracker-empty">Nenhum processamento ativo</div>
+      } @else {
+        @for (job of tracker.jobs(); track job.key) {
+          <div class="cf-tracker-job">
+            <div class="cf-tracker-job-head">
+              <span class="cf-tracker-job-title">{{ fileNameFor(job.path) }}</span>
+              <span class="cf-tracker-job-type">{{ job.jobType === 'main' ? 'completo' : 'seek' }}</span>
+            </div>
+            <div class="cf-tracker-bar">
+              <div class="cf-tracker-bar-fill" [style.width.%]="job.percentComplete"></div>
+            </div>
+            <div class="cf-tracker-job-foot">
+              <span>{{ job.percentComplete.toFixed(0) }}% · {{ formatTime(job.elapsedSeconds) }}</span>
+              <button class="cf-tracker-cancel" (click)="tracker.cancel(job.key)">Cancelar</button>
+            </div>
+          </div>
+        }
+      }
+    </div>
+  }
+</div>

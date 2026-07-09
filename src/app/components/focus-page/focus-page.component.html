@@ -1,0 +1,73 @@
+@if (lib.focused(); as f) {
+  <div class="cf-focus">
+    <div class="cf-focus-backdrop" aria-hidden="true">
+      @if (!lib.thumbFailed().has(posterSrc(f))) {
+        <img [src]="posterSrc(f)" alt="" decoding="async" (error)="onThumbError(posterSrc(f))" />
+      }
+      <div class="cf-focus-scrim"></div>
+    </div>
+
+    <button class="cf-focus-back" (click)="close()" title="Voltar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+      Voltar
+    </button>
+
+    <div class="cf-focus-body">
+      @if (lib.seriesLabelFor(f.path); as s) { <div class="cf-focus-kicker">{{ s }}</div> }
+      <h1 class="cf-focus-title">{{ cleanTitle(f.name) }}</h1>
+      <div class="cf-focus-meta">
+        @if (f.duration) { <span>{{ formatTime(f.duration) }}</span> }
+        @if (f.subUrl || f.embeddedSubtitles.length) { <span class="cf-hero-cc">CC</span> }
+      </div>
+
+      @if (progressPct(f); as pct) {
+        @if (pct > 0) {
+          <div class="cf-focus-progress"><div class="cf-focus-progress-fill" [style.width.%]="pct"></div></div>
+        }
+      }
+
+      <div class="cf-focus-actions">
+        <button class="cf-btn-play" (click)="play(f)">
+          <svg viewBox="0 0 14 16" width="14" height="16"><polygon points="0,0 14,8 0,16" fill="currentColor"/></svg>
+          {{ progressPct(f) > 0 ? 'CONTINUAR' : 'PLAY' }}
+        </button>
+        <button class="cf-btn-add wide" [class.on]="lib.inList(f)" (click)="toggleList(f)">
+          <span>{{ lib.inList(f) ? '✓' : '+' }}</span> {{ lib.inList(f) ? 'Na lista' : 'Minha lista' }}
+        </button>
+      </div>
+
+      <!-- Cache management (tap-reachable — mirrors the desktop tile hover actions) -->
+      <div class="cf-focus-manage">
+        @if (jobForPath(f.path); as job) {
+          <span class="cf-focus-chip processing">Processando · {{ job.percentComplete.toFixed(0) }}%</span>
+        } @else if (f.ready) {
+          <span class="cf-focus-chip ready">Processado</span>
+        } @else {
+          <button class="cf-focus-chip" (click)="preprocess(f)">Pré-processar</button>
+        }
+        @if ((f.cachedBytes ?? 0) > 0) {
+          <button class="cf-focus-chip danger" (click)="deleteCache(f)">Liberar {{ formatBytes(f.cachedBytes ?? 0) }}</button>
+        }
+      </div>
+
+      @if (siblings(f).length > 1) {
+        <div class="cf-focus-episodes">
+          <div class="cf-focus-episodes-title">{{ siblingsLabel(f) }}</div>
+          @for (ep of siblings(f); track ep.path) {
+            <div class="cf-focus-ep" [class.active]="ep.path === f.path" (click)="openSibling(ep)">
+              <div class="cf-focus-ep-art">
+                @if (!lib.thumbFailed().has(posterSrc(ep))) {
+                  <img [src]="posterSrc(ep)" alt="" loading="lazy" decoding="async" (error)="onThumbError(posterSrc(ep))" />
+                }
+                <button class="cf-focus-ep-play" (click)="playSibling(ep, $event)" title="Reproduzir">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                </button>
+              </div>
+              <div class="cf-focus-ep-name">{{ cleanTitle(ep.name) }}</div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+  </div>
+}

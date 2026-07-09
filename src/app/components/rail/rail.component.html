@@ -1,0 +1,16 @@
+<section class="cf-rail">
+  <h2 class="cf-rail-title">{{ rail.title }}</h2>
+  <div class="cf-rail-track">
+    <button class="cf-rail-arrow left" (click)="scrollRail(row, -1)" aria-label="Anterior" tabindex="-1">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <div #row class="cf-rail-row">
+      @for (node of rail.files; track node.path) {
+        <app-tile [node]="node" />
+      }
+    </div>
+    <button class="cf-rail-arrow right" (click)="scrollRail(row, 1)" aria-label="Próximo" tabindex="-1">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 18l6-6-6-6"/></svg>
+    </button>
+  </div>
+</section>

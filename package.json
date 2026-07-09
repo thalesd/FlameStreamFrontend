@@ -7,7 +7,8 @@
     "start-lan": "ng serve --configuration=lan-server",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "build:receiver": "esbuild src/receiver/main.ts --bundle --minify --format=iife --target=es2017 --outfile=../FlameStreamBackend/wwwroot/receiver.js"
   },
   "prettier": {
     "printWidth": 100,
@@ -40,6 +41,7 @@
     "@angular/cli": "^20.2.1",
     "@angular/compiler-cli": "^20.2.0",
     "@types/jasmine": "~5.1.0",
+    "esbuild": "^0.28.1",
     "jasmine-core": "~5.9.0",
     "karma": "~6.4.0",
     "karma-chrome-launcher": "~3.2.0",

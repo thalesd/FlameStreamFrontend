@@ -1,0 +1,285 @@
+<main class="stage">
+  <div
+    #container
+    class="player-container"
+    [class.playing]="state.cast.connected() ? state.cast.castPlaying() : state.isPlaying()"
+    [class.controls-hidden]="!state.showControls() && (state.cast.connected() ? state.cast.castPlaying() : state.isPlaying())"
+    [class.subsize-small]="state.subtitleSize() === 'small'"
+    [class.subsize-large]="state.subtitleSize() === 'large'"
+    (mousemove)="state.onMouseMove()"
+    (mouseleave)="state.showControls.set(true)"
+  >
+
+    <!-- Vídeo nativo -->
+    <video
+      #player
+      class="video"
+      playsinline
+      preload="metadata"
+      crossorigin="anonymous"
+      (play)="state.onPlay()"
+      (pause)="state.onPause()"
+      (ended)="state.onEnded()"
+      (timeupdate)="state.onTimeUpdate()"
+      (volumechange)="state.onVolumeChange()"
+      (click)="state.onVideoClick()"
+      (dblclick)="state.toggleFullscreen()"
+    >
+    </video>
+
+    <!-- Cast overlay -->
+    @if (state.cast.connected()) {
+      <div class="cast-overlay">
+        <svg viewBox="0 0 24 24" fill="currentColor" class="cast-overlay-icon">
+          <path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm18-7H5v1.63c3.96 1.28 7.09 4.41 8.37 8.37H19V7zM1 10v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3C1.9 3 1 3.9 1 5v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/>
+        </svg>
+        <span class="cast-overlay-title">{{ state.selected()?.title }}</span>
+        <span class="cast-overlay-sub">Transmitindo para TV</span>
+      </div>
+    }
+
+    <!-- Top bar (local playback only): back · logo · title / series (design 3b) -->
+    @if (!state.cast.connected()) {
+      <div class="cf-ptop">
+        <button class="cf-ptop-btn" (click)="state.closePlayer()" title="Voltar à biblioteca">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <img class="cf-ptop-logo" src="CozyFlameLogoColor.svg" alt="" aria-hidden="true" />
+        <div class="cf-ptop-titles">
+          <div class="cf-ptop-title">{{ state.selected()?.title }}</div>
+          @if (lib.seriesLabelFor(state.selected()?.path); as s) { <div class="cf-ptop-sub">{{ s }}</div> }
+        </div>
+      </div>
+    }
+
+    <!-- Banner de retomada -->
+    @if (!state.cast.connected() && state.resumeInfo()) {
+      <div class="resume-banner">
+        <span>Continuar de {{ state.resumeInfo()!.label }}?</span>
+        <button class="resume-btn" (click)="state.resumeFromHistory()">Continuar</button>
+        <button class="resume-dismiss" (click)="state.dismissResume()" title="Dispensar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+    }
+
+    <!-- Próximo episódio -->
+    @if (!state.cast.connected() && state.upNext(); as next) {
+      <div class="upnext-banner">
+        <div class="upnext-info">
+          <span class="upnext-label">Próximo episódio em {{ next.seconds }}s</span>
+          <span class="upnext-title">{{ next.file.name }}</span>
+        </div>
+        <button class="upnext-play" (click)="state.playNextEpisode()">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          Reproduzir
+        </button>
+        <button class="upnext-dismiss" (click)="state.cancelUpNext()" title="Cancelar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+    }
+
+    <!-- Overlay de processamento (seek) -->
+    @if (!state.cast.connected() && (state.seekProcessing() || state.seekError())) {
+      <div class="seek-overlay">
+        @if (state.seekProcessing()) {
+          <div class="seek-spinner"></div>
+          <span class="seek-overlay-title">Processando…</span>
+        } @else if (state.seekError()) {
+          <span class="seek-overlay-title">{{ state.seekError() }}</span>
+          <button class="seek-retry-btn" (click)="state.retrySeek()">Tentar novamente</button>
+        }
+      </div>
+    }
+
+    <!-- ─── Controles ──────────────────────────────────────────────────── -->
+    <div class="controls">
+
+      @let ct  = state.cast.connected() ? state.cast.castCurrentTime() : state.currentTime();
+      @let dur = (state.cast.connected() ? state.cast.castDuration() : 0) || state.duration();
+      @let pos = state.scrubbing() ? state.scrubValue() : ct;
+      <div class="cf-scrub-row">
+      <span class="cf-time">{{ formatTime(pos) }}</span>
+      <div #progressArea class="progress-area" [class.scrubbing]="state.scrubbing()"
+           (mousemove)="state.onSeekHover($event)" (mouseleave)="state.onSeekLeave()">
+        @if (state.scenePreview(); as prev) {
+          <div class="scene-preview" [style.left.px]="prev.leftPx">
+            @if (lib.thumbFailed().has(prev.url)) {
+              <div class="scene-preview-img scene-preview-empty">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+              </div>
+            } @else {
+              <img class="scene-preview-img" [src]="prev.url" alt="" draggable="false"
+                   (error)="lib.onThumbError(prev.url)" />
+            }
+            <span class="scene-preview-time">{{ formatTime(prev.time) }}</span>
+          </div>
+        }
+        <div class="progress-track">
+          <div class="progress-buffered" [style.width.%]="state.cast.connected() ? 0 : state.buffered()"></div>
+          <div class="progress-fill"     [style.width.%]="dur ? (pos / dur) * 100 : 0"></div>
+          <div class="progress-thumb"    [style.left.%]="dur ? (pos / dur) * 100 : 0"></div>
+        </div>
+        <input
+          type="range" class="progress-input"
+          min="0" [max]="dur || 100" step="0.1"
+          [value]="pos"
+          (pointerdown)="state.onScrubPointerDown($event)"
+          (pointermove)="state.onScrubPointerMove($event)"
+          (pointerup)="state.onScrubEnd()"
+          (pointercancel)="state.onScrubEnd()"
+          (input)="state.onScrubInput($event)"
+          (keydown)="state.onScrubKeyDown()"
+          (keyup)="state.onScrubEnd()"
+          (blur)="state.onScrubEnd()"
+        />
+      </div>
+      <span class="cf-time">{{ formatTime(dur) }}</span>
+      </div>
+      <!-- /cf-scrub-row -->
+
+      <div class="controls-row">
+
+        <div class="controls-left">
+          @if (state.prevEpisode(); as prev) {
+            <button class="ctrl-btn" (click)="state.goToEpisode(prev)" [title]="'Episódio anterior: ' + prev.name">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+            </button>
+          }
+
+          @let playing = state.cast.connected() ? state.cast.castPlaying() : state.isPlaying();
+          <button class="ctrl-btn play-btn" (click)="state.togglePlay()">
+            @if (!playing) {
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            } @else {
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            }
+          </button>
+
+          @if (state.nextEpisode(); as next) {
+            <button class="ctrl-btn" (click)="state.goToEpisode(next)" [title]="'Próximo episódio: ' + next.name">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6zM16 6v12h2V6z"/></svg>
+            </button>
+          }
+        </div>
+
+        <div class="controls-right">
+          <!-- Legendas (abre o painel — design 3c) -->
+          <button
+            class="ctrl-btn sub-btn"
+            [class.active]="state.subtitlesOn()"
+            [class.unavailable]="!state.subtitlesAvailable()"
+            (click)="state.subtitlesAvailable() && state.openSubtitles()"
+            [title]="state.subtitlesAvailable() ? 'Legendas' : 'Sem legenda'"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-9 8H9v-1H7v2h2v1H6v-4h5v2zm7 0h-2v-1h-2v2h2v1h-3v-4h5v2z"/></svg>
+            <span class="ctrl-label">Legendas</span>
+          </button>
+
+          <!-- Áudio (seleção de faixa — em breve) -->
+          <button class="ctrl-btn" disabled title="Faixas de áudio (em breve)">
+            <span class="ctrl-label">Áudio</span>
+          </button>
+
+          <!-- Volume -->
+          <div class="volume-group">
+            <button class="ctrl-btn" (click)="state.toggleMute()">
+              @if (!state.isMuted() && state.volume() > 0.5) {
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+              } @else if (!state.isMuted() && state.volume() <= 0.5 && state.volume() > 0) {
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5z"/></svg>
+              } @else {
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>
+              }
+            </button>
+            <input
+              type="range" class="volume-slider"
+              min="0" max="1" step="0.02"
+              [value]="state.isMuted() ? 0 : state.volume()"
+              (input)="state.setVolume($event)"
+            />
+          </div>
+
+          <!-- Subtitle track picker (cast) -->
+          @if (state.castTracks().length > 2) {
+            <div class="track-picker">
+              <button
+                class="track-btn track-toggle"
+                [class.active]="state.castActiveTrackId() !== null"
+                (click)="state.toggleTrackMenu()"
+                title="Escolher legenda"
+              >{{ state.activeTrackLabel() }} <span class="caret">▾</span></button>
+
+              @if (state.showTrackMenu()) {
+                <div class="track-menu-backdrop" (click)="state.closeTrackMenu()"></div>
+                <div class="track-menu">
+                  <button
+                    class="track-menu-item"
+                    [class.active]="state.castActiveTrackId() === null"
+                    (click)="state.setCastTrack(null)"
+                  >Sem legendas</button>
+                  @for (t of state.castTracks(); track t.id) {
+                    <button
+                      class="track-menu-item"
+                      [class.active]="state.castActiveTrackId() === t.id"
+                      (click)="state.setCastTrack(t.id)"
+                    >
+                      <span class="track-src" [class.emb]="t.source === 'EMB'">{{ t.source }}</span>
+                      <span class="track-menu-lang">{{ t.lang }}</span>
+                      <span class="track-menu-name">{{ t.name }}</span>
+                    </button>
+                  }
+                </div>
+              }
+            </div>
+          } @else if (state.castTracks().length) {
+            <div class="track-picker">
+              <button
+                class="track-btn"
+                [class.active]="state.castActiveTrackId() === null"
+                (click)="state.setCastTrack(null)"
+                title="Sem legendas"
+              >Off</button>
+              @for (t of state.castTracks(); track t.id) {
+                <button
+                  class="track-btn"
+                  [class.active]="state.castActiveTrackId() === t.id"
+                  (click)="state.setCastTrack(t.id)"
+                  [title]="t.source + ' · ' + t.name"
+                ><span class="pill-src" [class.emb]="t.source === 'EMB'">{{ t.source }}</span>{{ t.lang }}</button>
+              }
+            </div>
+          }
+
+          <!-- Cast button -->
+          <button class="ctrl-btn" (click)="state.castSelected()" [title]="'Cast (' + (state.castUseDirectFile() ? 'direct' : 'HLS') + ')'">
+            <svg viewBox="0 0 24 24" fill="currentColor" [class.cast-active]="state.cast.connected()">
+              <path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm18-7H5v1.63c3.96 1.28 7.09 4.41 8.37 8.37H19V7zM1 10v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3C1.9 3 1 3.9 1 5v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/>
+            </svg>
+          </button>
+          <button class="ctrl-btn" (click)="state.castUseDirectFile.set(!state.castUseDirectFile())"
+                  [title]="state.castUseDirectFile() ? 'Cast mode: direct file (click for HLS)' : 'Cast mode: HLS (click for direct file)'">
+            <span style="font-size:10px;font-weight:600;line-height:1">{{ state.castUseDirectFile() ? 'DIR' : 'HLS' }}</span>
+          </button>
+
+          <!-- Fullscreen -->
+          <button class="ctrl-btn" (click)="state.toggleFullscreen()" title="Tela cheia">
+            @if (!state.isFullscreen()) {
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+            } @else {
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>
+            }
+          </button>
+        </div>
+
+      </div>
+    </div>
+    <!-- /controls -->
+
+    <!-- ─── Subtitles & captions panel (design 3c) ──────────────────────── -->
+    <app-subtitles-modal />
+
+  </div>
+  <!-- /player-container -->
+</main>

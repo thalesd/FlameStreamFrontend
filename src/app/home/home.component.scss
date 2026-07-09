@@ -21,7 +21,7 @@ $font-mono:     'DM Mono', monospace;
 // ── Reset & base ──────────────────────────────────────────────────────────────
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-:host {
+app-home {
   display: block;
   height: 100dvh;
   font-family: var(--cf-font);
@@ -1124,9 +1124,16 @@ $font-mono:     'DM Mono', monospace;
   pointer-events: none;
   z-index: 0;
 }
-.cf-home > .cf-nav,
-.cf-home > .cf-hero,
-.cf-home > .cf-rails { position: relative; z-index: 1; }
+// Keep the browse content above the ambient glow/watermark (z-index:0). The old
+// `.cf-home > .cf-nav` child selectors no longer match now that <app-nav>/<app-hero> wrap
+// these (display:contents keeps them in-flow but the DOM `>` combinator sees the wrapper),
+// so target the classes directly.
+.cf-hero,
+.cf-rails { position: relative; z-index: 1; }
+// Nav sits ABOVE hero/rails (not at the same z-index:1) so its fixed-position dropdowns
+// — the processing tracker popup, avatar menu — aren't trapped inside the nav's stacking
+// context below later-painted siblings in the same layer. Stays below modals (200)/fireplace (500).
+.cf-nav { position: relative; z-index: 20; }
 
 // ── Top nav ───────────────────────────────────────────────────────────────────
 .cf-nav {
@@ -1205,9 +1212,15 @@ $font-mono:     'DM Mono', monospace;
     width: 9px;
     height: 9px;
     border-radius: 50%;
-    background: var(--cf-ember);
-    box-shadow: 0 0 10px var(--cf-ember);
-    animation: cfFlicker 3s infinite;
+    background: var(--cf-text-35);   // grayed out while fireplace mode is off
+    box-shadow: none;
+    transition: background 0.2s ease, box-shadow 0.2s ease;
+
+    &.on {
+      background: var(--cf-ember);
+      box-shadow: 0 0 10px var(--cf-ember);
+      animation: cfFlicker 3s infinite;
+    }
   }
 }
 
@@ -1245,6 +1258,14 @@ $font-mono:     'DM Mono', monospace;
   border-radius: 10px;
   background: var(--cf-flame);
   flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--cf-ink);
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.03em;
+  user-select: none;
 }
 
 // ── Processing tracker popup ──────────────────────────────────────────────────
@@ -1421,11 +1442,48 @@ $font-mono:     'DM Mono', monospace;
   gap: 16px;
   padding: 4px 54px;
   overflow-x: auto;
-  scrollbar-width: thin;
+  scroll-snap-type: x mandatory;
+  scroll-padding-left: 54px;
+  // Carousel: no visible scrollbar (arrows + drag/wheel move it).
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar { display: none; }
+}
 
-  &::-webkit-scrollbar        { height: 8px; }
-  &::-webkit-scrollbar-track  { background: transparent; }
-  &::-webkit-scrollbar-thumb  { background: rgba(245, 237, 224, 0.12); border-radius: 99px; }
+// Carousel track: holds the row plus the hover arrow buttons.
+.cf-rail-track {
+  position: relative;
+
+  &:hover .cf-rail-arrow { opacity: 1; }
+}
+.cf-rail-arrow {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  z-index: 4;
+  width: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  color: var(--cf-text);
+  opacity: 0;
+  transition: opacity .16s;
+
+  svg { width: 26px; height: 26px; }
+
+  &.left  { left: 0;  background: linear-gradient(90deg, var(--cf-bg) 30%, transparent); justify-content: flex-start; padding-left: 10px; }
+  &.right { right: 0; background: linear-gradient(270deg, var(--cf-bg) 30%, transparent); justify-content: flex-end;  padding-right: 10px; }
+  &:hover svg { color: var(--cf-amber); transform: scale(1.15); }
+}
+
+// My List grid.
+.cf-list-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 18px 16px;
+  padding: 4px 54px;
 }
 
 // ── Tile (shared by continue-watching + library rails) ────────────────────────
@@ -1916,12 +1974,45 @@ $font-mono:     'DM Mono', monospace;
   animation: cfGlow 6s ease-in-out infinite;
 }
 
-.cf-fire-ember {
+// Burning ashes rising off the fire. Each ash drifts upward (translateY), sways sideways
+// (translateX via --ash-drift), shrinks and fades — GPU-cheap (transform + opacity only),
+// so it stays smooth even on a weak TV/Chromecast GPU. Per-particle left/size/timing below.
+.cf-fire-ashes { position: absolute; inset: 0; pointer-events: none; }
+
+@keyframes cfAshRise {
+  0%   { opacity: 0; transform: translate(0, 0) scale(1); }
+  12%  { opacity: 1; }
+  55%  { opacity: 0.85; }
+  85%  { opacity: 0.35; }
+  100% { opacity: 0; transform: translate(var(--ash-drift, 16px), -82vh) scale(0.35); }
+}
+
+.cf-fire-ash {
   position: absolute;
+  bottom: 8%;
   border-radius: 50%;
-  &.e1 { left: 22%; bottom: 14%; width: 7px; height: 7px; background: var(--cf-amber); box-shadow: 0 0 12px var(--cf-amber); opacity: 0.7; animation: cfGlow 4s ease-in-out infinite; }
-  &.e2 { left: 70%; bottom: 24%; width: 5px; height: 5px; background: var(--cf-ember); box-shadow: 0 0 12px var(--cf-ember); opacity: 0.6; animation: cfFlicker 3.5s infinite; }
-  &.e3 { left: 58%; bottom: 10%; width: 6px; height: 6px; background: var(--cf-amber); box-shadow: 0 0 12px var(--cf-amber); opacity: 0.5; animation: cfGlow 5s ease-in-out infinite; }
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: cfAshRise linear infinite;
+  // Defaults; overridden per-particle. Amber and ember tones alternate.
+  width: 6px; height: 6px;
+  background: var(--cf-amber);
+  box-shadow: 0 0 10px var(--cf-amber);
+
+  &.a1  { left: 16%; bottom: 12%; width: 6px; height: 6px; --ash-drift:  22px; animation-duration: 7.5s;  animation-delay: 0s;    }
+  &.a2  { left: 24%; bottom: 8%;  width: 4px; height: 4px; background: var(--cf-ember); box-shadow: 0 0 9px var(--cf-ember);  --ash-drift: -18px; animation-duration: 9s;    animation-delay: 1.2s;  }
+  &.a3  { left: 33%; bottom: 15%; width: 7px; height: 7px; --ash-drift:  30px; animation-duration: 8.2s;  animation-delay: 3s;    }
+  &.a4  { left: 42%; bottom: 10%; width: 5px; height: 5px; background: var(--cf-ember); box-shadow: 0 0 10px var(--cf-ember); --ash-drift: -26px; animation-duration: 10.5s; animation-delay: 0.6s;  }
+  &.a5  { left: 50%; bottom: 6%;  width: 4px; height: 4px; --ash-drift:  14px; animation-duration: 6.5s;  animation-delay: 2.4s;  }
+  &.a6  { left: 58%; bottom: 13%; width: 6px; height: 6px; background: var(--cf-ember); box-shadow: 0 0 11px var(--cf-ember); --ash-drift:  28px; animation-duration: 9.4s;  animation-delay: 4.1s;  }
+  &.a7  { left: 66%; bottom: 9%;  width: 5px; height: 5px; --ash-drift: -22px; animation-duration: 8s;    animation-delay: 1.8s;  }
+  &.a8  { left: 74%; bottom: 16%; width: 7px; height: 7px; background: var(--cf-ember); box-shadow: 0 0 12px var(--cf-ember); --ash-drift: -32px; animation-duration: 11s;   animation-delay: 3.6s;  }
+  &.a9  { left: 82%; bottom: 7%;  width: 4px; height: 4px; --ash-drift:  20px; animation-duration: 7.2s;  animation-delay: 0.3s;  }
+  &.a10 { left: 88%; bottom: 12%; width: 5px; height: 5px; --ash-drift: -16px; animation-duration: 9.8s;  animation-delay: 5s;    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cf-fire-ash { animation: cfFlicker 4s ease-in-out infinite; opacity: 0.6; }
 }
 
 .cf-fire-brand {
@@ -2002,4 +2093,305 @@ $font-mono:     'DM Mono', monospace;
   font: 500 13px var(--cf-font);
   color: var(--cf-text-45);
   letter-spacing: 0.04em;
+}
+
+// ══ Decomposition & Phase-3 additions ═════════════════════════════════════════
+// Structural wrapper components render as display:contents so the extracted child
+// components don't insert an extra box between flex/grid parents and their real
+// children (.cf-tile inside a rail, .cf-rail inside .cf-rails, etc.) — keeps the
+// layout identical to the pre-split monolith.
+app-nav, app-hero, app-rail, app-tile, app-focus-page,
+app-processing-tracker, app-subtitles-modal, app-player, app-fireplace {
+  display: contents;
+}
+
+.cf-tile { scroll-snap-align: start; }
+
+// Bookmark (add-to-list) tile action — reuses .cf-tile-action; amber when on the list.
+.cf-tile-action.on { color: var(--cf-amber); }
+
+// Hero / focus "add to list" button, active state + wide (labelled) variant.
+.cf-btn-add {
+  &.on { color: var(--cf-amber); border-color: var(--cf-line-amber); }
+  &.wide { min-width: 0; padding: 0 20px; gap: 8px; font-size: 15px; font-weight: 700; span { font-size: 18px; } }
+}
+
+// ── Focus / detail page ───────────────────────────────────────────────────────
+.cf-focus {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  overflow-y: auto;
+  background: var(--cf-bg);
+  animation: cfFadeIn 0.25s ease;
+}
+.cf-focus-backdrop {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 72vh;
+  z-index: 0;
+  img { width: 100%; height: 100%; object-fit: cover; opacity: 0.5; }
+}
+.cf-focus-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(10,8,6,0.35) 0%, rgba(10,8,6,0.7) 55%, var(--cf-bg) 100%),
+    linear-gradient(90deg, rgba(10,8,6,0.85) 0%, transparent 60%);
+}
+.cf-focus-back {
+  position: relative;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 26px 0 0 40px;
+  padding: 10px 16px 10px 12px;
+  border: 1px solid var(--cf-line-soft);
+  border-radius: 10px;
+  background: var(--cf-panel-soft);
+  color: var(--cf-text);
+  font: 600 14px var(--cf-font);
+  cursor: pointer;
+  transition: background 0.15s;
+  svg { width: 18px; height: 18px; }
+  &:hover { background: var(--cf-panel-hover); }
+}
+.cf-focus-body {
+  position: relative;
+  z-index: 2;
+  max-width: 760px;
+  padding: 32vh 40px 60px;
+}
+.cf-focus-kicker {
+  font-weight: 700;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--cf-amber);
+  margin-bottom: 10px;
+}
+.cf-focus-title {
+  margin: 0 0 14px;
+  font-family: var(--cf-font-serif);
+  font-weight: 600;
+  font-size: 48px;
+  line-height: 1.05;
+  color: var(--cf-text);
+}
+.cf-focus-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--cf-text-70);
+  font-size: 15px;
+  margin-bottom: 18px;
+}
+.cf-focus-progress {
+  width: 320px;
+  max-width: 100%;
+  height: 5px;
+  border-radius: 99px;
+  background: var(--cf-line-soft);
+  overflow: hidden;
+  margin-bottom: 22px;
+}
+.cf-focus-progress-fill { height: 100%; background: var(--cf-flame); border-radius: 99px; }
+.cf-focus-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 44px;
+}
+.cf-focus-episodes { position: relative; }
+.cf-focus-episodes-title {
+  font-weight: 800;
+  font-size: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 16px;
+}
+.cf-focus-ep {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 16px;
+  align-items: center;
+  padding: 10px;
+  border-radius: var(--cf-r-md);
+  cursor: pointer;
+  transition: background 0.14s;
+  &:hover { background: var(--cf-panel-soft); }
+  &.active { background: var(--cf-panel-soft); outline: 1px solid var(--cf-line-amber); }
+}
+.cf-focus-ep-art {
+  position: relative;
+  width: 140px;
+  height: 80px;
+  border-radius: var(--cf-r-sm);
+  overflow: hidden;
+  background: var(--cf-flame);
+  img { width: 100%; height: 100%; object-fit: cover; }
+}
+.cf-focus-ep-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: rgba(10, 8, 6, 0.35);
+  color: #fff;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.14s;
+  svg { width: 30px; height: 30px; }
+}
+.cf-focus-ep:hover .cf-focus-ep-play { opacity: 1; }
+.cf-focus-ep-name { font-weight: 600; font-size: 15px; color: var(--cf-text); }
+
+// ══ Responsive / touch ════════════════════════════════════════════════════════
+
+// Cache-management chips on the focus page (reachable without hover, both desktop & mobile).
+.cf-focus-manage { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 40px; }
+.cf-focus-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 99px;
+  border: 1px solid var(--cf-line-soft);
+  background: var(--cf-panel-soft);
+  color: var(--cf-text-70);
+  font: 600 13px var(--cf-font);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  &:hover { background: var(--cf-panel-hover); color: var(--cf-text); }
+  &.processing { color: var(--cf-amber); border-color: var(--cf-line-amber); cursor: default; }
+  &.ready { color: var(--cf-good); cursor: default; }
+  &.danger:hover { color: #ff6b5a; border-color: rgba(255, 107, 90, 0.4); }
+}
+
+// The seek bar should scrub on drag, not scroll the page, on touch.
+.progress-area, .progress-input { touch-action: none; }
+
+// Bottom tab bar hidden on desktop; hover overlays disabled on touch so they can't eat taps.
+.cf-tabbar { display: none; }
+@media (hover: none) {
+  .cf-rail-arrow { display: none; }
+  .cf-tile-actions { display: none; }
+}
+
+// ── Tablet ────────────────────────────────────────────────────────────────────
+@media (max-width: 1024px) {
+  .cf-nav { gap: 24px; padding: 0 24px; }
+  .cf-nav-links { gap: 22px; }
+  .cf-hero { padding: 24px 24px 32px; }
+  .cf-rail-title { padding: 0 24px; }
+  .cf-rail-row { padding: 4px 24px; scroll-padding-left: 24px; }
+  .cf-list-grid { padding: 4px 24px; }
+  .cf-focus-body { padding: 30vh 24px 56px; }
+}
+
+// ── Phone ─────────────────────────────────────────────────────────────────────
+@media (max-width: 640px) {
+  // Slim top bar; section links move to the bottom tab bar.
+  .cf-nav {
+    min-height: 56px;
+    height: auto;
+    gap: 12px;
+    padding: calc(6px + env(safe-area-inset-top, 0)) 14px 6px;
+  }
+  .cf-brand-name { display: none; }
+  .cf-nav-links { display: none; }
+  .cf-fireplace-btn { display: none; }   // fireplace still auto-triggers on idle
+  .cf-nav-right { gap: 12px; }
+
+  // Bottom tab bar.
+  .cf-tabbar {
+    display: flex;
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 60;
+    justify-content: space-around;
+    background: rgba(12, 10, 8, 0.96);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid var(--cf-line);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .cf-tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 8px 0 7px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: var(--cf-text-45);
+    font: 700 10px var(--cf-font);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    svg { width: 22px; height: 22px; }
+    &.active { color: var(--cf-amber); }
+  }
+  // Room above the fixed tab bar for the scroll content.
+  .cf-home { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0)); }
+
+  // Hero.
+  .cf-hero { padding: 16px 16px 26px; gap: 16px; }
+  .cf-hero-title { font-size: 30px; line-height: 1.05; }
+  .cf-hero-body { max-width: 100%; }
+  .cf-hero-art { width: 100%; max-width: 100%; height: auto; aspect-ratio: 16 / 9; }
+
+  // Rails / tiles.
+  .cf-rails { gap: 26px; }
+  .cf-rail-title { padding: 0 16px; font-size: 14px; }
+  .cf-rail-row { padding: 4px 16px; gap: 12px; scroll-padding-left: 16px; }
+  .cf-tile { width: 150px; }
+  .cf-tile .cf-tile-art { width: 150px; height: 86px; }
+  .cf-list-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); padding: 4px 16px; gap: 14px 12px; }
+
+  // Ambient decorations.
+  .cf-home-watermark { display: none; }
+  .cf-home-glow { width: 420px; height: 360px; right: -120px; }
+
+  // Focus / detail page.
+  .cf-focus-backdrop { height: 46vh; }
+  .cf-focus-back { margin: calc(12px + env(safe-area-inset-top, 0)) 0 0 16px; }
+  .cf-focus-body { padding: 26vh 16px calc(80px + env(safe-area-inset-bottom, 0)); max-width: 100%; }
+  .cf-focus-title { font-size: 28px; }
+  .cf-focus-actions { flex-wrap: wrap; }
+  .cf-focus-actions .cf-btn-play,
+  .cf-focus-actions .cf-btn-add { flex: 1; justify-content: center; min-width: 140px; }
+  .cf-focus-ep { grid-template-columns: 96px 1fr; }
+  .cf-focus-ep-art { width: 96px; height: 54px; }
+
+  // Player: icon-only controls, no volume (hardware), safe-area insets, bigger tap targets.
+  .cf-ptop { padding: calc(10px + env(safe-area-inset-top, 0)) 14px 10px; }
+  .controls { padding-bottom: env(safe-area-inset-bottom, 0); }
+  .controls-row { gap: 6px; }
+  .controls-right .volume-group { display: none; }
+  .controls-right > button[disabled] { display: none; }   // "Áudio (em breve)" placeholder
+  .ctrl-label { display: none; }
+
+  // Subtitles panel → bottom sheet.
+  .cf-subs-panel {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
+    transform: none;
+    width: 100%;
+    max-width: 100%;
+    max-height: 82vh;
+    overflow-y: auto;
+    border-radius: 18px 18px 0 0;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom, 0));
+  }
+
+  // Fireplace clock scales down.
+  .cf-fire-time { font-size: 15vw; }
+  .cf-fire-clock { padding: 0 20px; }
 }

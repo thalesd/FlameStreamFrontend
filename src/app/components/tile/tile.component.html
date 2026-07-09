@@ -1,0 +1,46 @@
+<div class="cf-tile" [class.active]="state.selected()?.path === node.path" (click)="open()">
+  <div class="cf-tile-art">
+    @if (!lib.thumbFailed().has(posterSrc(node))) {
+      <img class="cf-tile-img" [src]="posterSrc(node)" alt="" loading="lazy" decoding="async"
+           (error)="onThumbError(posterSrc(node))" />
+    }
+    <span class="cf-tile-label">{{ node.name }}</span>
+
+    <!-- per-file actions (hover) -->
+    <div class="cf-tile-actions" (click)="$event.stopPropagation()">
+      <button class="cf-tile-action" [class.on]="lib.inList(node)" (click)="toggleList($event)"
+              [title]="lib.inList(node) ? 'Remover da lista' : 'Adicionar à lista'">
+        @if (lib.inList(node)) {
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 3H7a2 2 0 0 0-2 2v16l7-3 7 3V5a2 2 0 0 0-2-2z"/></svg>
+        } @else {
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3H7a2 2 0 0 0-2 2v16l7-3 7 3V5a2 2 0 0 0-2-2z"/><path d="M12 8v6M9 11h6" stroke-width="1.6"/></svg>
+        }
+      </button>
+      @if (jobForPath(node.path); as job) {
+        <span class="cf-tile-badge processing" [title]="job.percentComplete.toFixed(0) + '%'">
+          <svg class="cf-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="9"/></svg>
+        </span>
+      } @else if (node.ready) {
+        <span class="cf-tile-badge ready" title="Já processado">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg>
+        </span>
+      } @else {
+        <button class="cf-tile-action" (click)="preprocess(node, $event)" title="Pré-processar">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+      }
+      @if ((node.cachedBytes ?? 0) > 0) {
+        <button class="cf-tile-action"
+                [class.disabled]="state.selected()?.path === node.path"
+                (click)="deleteCache(node, $event)"
+                [title]="'Liberar ' + formatBytes(node.cachedBytes ?? 0)">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+        </button>
+      }
+    </div>
+  </div>
+  <div class="cf-tile-meta">
+    {{ node.name }}
+    @if (node.subUrl || node.embeddedSubtitles.length) { <span class="cf-cc-dot">CC</span> }
+  </div>
+</div>

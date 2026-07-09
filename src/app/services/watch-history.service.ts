@@ -32,7 +32,10 @@ export class WatchHistoryService {
     }
   }
 
-  save(path: string, positionSeconds: number, durationSeconds: number): void {
+  // Returns a promise that resolves once the write is acknowledged, so callers that need to
+  // re-read the shelf immediately after (e.g. refreshing Continue Watching on exit) can await it
+  // and avoid the save→reload race. Fire-and-forget callers (interval, beforeunload) ignore it.
+  save(path: string, positionSeconds: number, durationSeconds: number): Promise<void> {
     // Deliberately not using navigator.sendBeacon here: the Beacon API always sends
     // cross-origin requests with credentials included, which the browser then refuses
     // to accept against this backend's wildcard `Access-Control-Allow-Origin: *` CORS
@@ -41,7 +44,8 @@ export class WatchHistoryService {
     // doesn't include credentials cross-origin by default, so it works with the
     // existing policy; the tradeoff is a beforeunload save can occasionally get cut off
     // by the browser mid-flight, which is acceptable for a personal watch-progress feature.
-    this.http.post(`${BACKEND_BASE}/api/watch-history`, { path, positionSeconds, durationSeconds })
-      .subscribe({ error: () => {} });
+    return firstValueFrom(
+      this.http.post(`${BACKEND_BASE}/api/watch-history`, { path, positionSeconds, durationSeconds })
+    ).then(() => {}, () => {});
   }
 }

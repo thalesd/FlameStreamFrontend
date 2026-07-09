@@ -1,0 +1,36 @@
+<div class="cf-fire" (click)="fire.exit()">
+  <div class="cf-fire-glow" aria-hidden="true"></div>
+  <!-- Burning ashes: small embers that drift up from the fire and fade out (see cfAshRise). -->
+  <div class="cf-fire-ashes" aria-hidden="true">
+    <span class="cf-fire-ash a1"></span>
+    <span class="cf-fire-ash a2"></span>
+    <span class="cf-fire-ash a3"></span>
+    <span class="cf-fire-ash a4"></span>
+    <span class="cf-fire-ash a5"></span>
+    <span class="cf-fire-ash a6"></span>
+    <span class="cf-fire-ash a7"></span>
+    <span class="cf-fire-ash a8"></span>
+    <span class="cf-fire-ash a9"></span>
+    <span class="cf-fire-ash a10"></span>
+  </div>
+
+  <div class="cf-fire-brand">
+    <img src="CozyFlameLogoColor.svg" alt="" aria-hidden="true" />
+    <span>CozyFlame</span>
+  </div>
+
+  <div class="cf-fire-clock">
+    <div class="cf-fire-time">{{ fire.time() }}</div>
+    <div class="cf-fire-date">{{ fire.date() }}</div>
+  </div>
+
+  <img class="cf-fire-logo" src="CozyFlameLogoColor.svg" alt="" aria-hidden="true" />
+
+  <div class="cf-fire-foot">
+    <div class="cf-fire-sound">
+      <span class="cf-fire-bars" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+      Crackling Fire · soundscape on
+    </div>
+    <div class="cf-fire-hint">Pressione qualquer tecla para navegar</div>
+  </div>
+</div>
