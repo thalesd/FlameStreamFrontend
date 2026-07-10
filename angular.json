@@ -50,6 +50,21 @@
               "outputHashing": "all",
               "serviceWorker": "ngsw-config.json"
             },
+            "native": {
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "1MB",
+                  "maximumError": "2MB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "40kB",
+                  "maximumError": "64kB"
+                }
+              ],
+              "outputHashing": "all"
+            },
             "development": {
               "optimization": false,
               "extractLicenses": false,

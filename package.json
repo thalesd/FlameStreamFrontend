@@ -8,7 +8,12 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "build:receiver": "esbuild src/receiver/main.ts --bundle --minify --format=iife --target=es2017 --outfile=../FlameStreamBackend/wwwroot/receiver.js"
+    "build:receiver": "esbuild src/receiver/main.ts --bundle --minify --format=iife --target=es2017 --outfile=../FlameStreamBackend/wwwroot/receiver.js",
+    "build:native": "ng build --configuration native",
+    "cap:sync": "npm run build:native && cap sync",
+    "cap:android": "npm run cap:sync && cap open android",
+    "icons": "node scripts/gen-icons.mjs",
+    "publish:ota": "node scripts/publish-ota.mjs"
   },
   "prettier": {
     "printWidth": 100,
@@ -31,6 +36,10 @@
     "@angular/platform-browser": "^20.2.0",
     "@angular/router": "^20.2.0",
     "@angular/service-worker": "^20.2.0",
+    "@capacitor/android": "^8.4.1",
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/core": "^8.4.1",
+    "@capgo/capacitor-updater": "^8.50.2",
     "hls.js": "^1.6.11",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
@@ -40,6 +49,8 @@
     "@angular/build": "^20.2.1",
     "@angular/cli": "^20.2.1",
     "@angular/compiler-cli": "^20.2.0",
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.4.1",
     "@types/jasmine": "~5.1.0",
     "esbuild": "^0.28.1",
     "jasmine-core": "~5.9.0",

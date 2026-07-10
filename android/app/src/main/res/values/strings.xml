@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">FlameStream</string>
+    <string name="title_activity_main">FlameStream</string>
+    <string name="package_name">com.tdonsoft.flamestream</string>
+    <string name="custom_url_scheme">com.tdonsoft.flamestream</string>
+</resources>
