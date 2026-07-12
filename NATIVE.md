@@ -32,15 +32,26 @@ Toolchain is installed on the dev box (Android Studio + SDK, bundled JDK 21). Th
 - `android/local.properties` points Gradle at the SDK (`sdk.dir=...`, gitignored).
 - Set `JAVA_HOME` to the bundled JBR per build.
 
+**One command (any shell — PowerShell, cmd, bash):**
+
+```bash
+npm run build:apk               # cap:sync + assembleDebug → app/build/outputs/apk/debug/app-debug.apk
+npm run build:apk -- --install  # also adb install -r onto the connected device
+npm run build:apk -- --release  # assembleRelease instead
+```
+
+`scripts/build-apk.mjs` resolves `JAVA_HOME` (Android Studio's bundled JBR) and `adb` (from the SDK)
+itself, and invokes the Gradle wrapper by **absolute path** (some Windows shells don't search the
+current dir for `gradlew.bat`). Manual equivalent, if you prefer:
+
 ```bash
 npm run cap:sync
 cd android
-JAVA_HOME="/c/Program Files/Android/Android Studio/jbr" ./gradlew assembleDebug
-# → app/build/outputs/apk/debug/app-debug.apk
+JAVA_HOME="/c/Program Files/Android/Android Studio/jbr" ./gradlew assembleDebug   # git-bash
+# PowerShell: $env:JAVA_HOME="C:\Program Files\Android\Android Studio\jbr"; .\gradlew.bat assembleDebug
 ```
 
-Use the shell `./gradlew` under git-bash (not `cmd //c gradlew.bat`). A signed release build
-needs a keystore (kept out of git) — documented later in the release runbook.
+A signed release build needs a keystore (kept out of git) — documented later in the release runbook.
 
 ## Launcher icon
 

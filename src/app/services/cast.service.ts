@@ -1,107 +1,65 @@
-import { Injectable, NgZone, signal } from '@angular/core';
-import { CAST_MEDIA_BASE, RECEIVER_APP_ID } from '../../../env-cast';
+import { Injectable, NgZone, Signal, effect, signal } from '@angular/core';
+import { Capacitor } from '@capacitor/core';
+import { CAST_MEDIA_BASE } from '../../../env-cast';
+import { CastTransport, WebCastTransport, NativeCastTransport } from './cast-transport';
 
-// Custom message channel shared with the receiver (wwwroot/receiver.js in the backend).
-// The TV's CAF PlayerManager is broken for every media type (LOAD_FAILED 905 pre-network,
-// even for Google's own sample streams — established 2026-07-03), so the receiver drives
-// playback itself with hls.js and the sender talks to it over this namespace instead of
-// the standard media channel. Protocol documented at the top of receiver.js.
-const NS = 'urn:x-cast:flamestream';
-
+/**
+ * Drives the custom FlameStream Cast receiver. The receiver's CAF PlayerManager is broken for every
+ * media type (LOAD_FAILED 905 pre-network, established 2026-07-03), so the receiver plays media
+ * itself with hls.js and the sender talks to it over a custom namespace instead of the standard
+ * media channel — see the protocol at the top of receiver.js.
+ *
+ * This class is transport-agnostic: in the browser it drives Chrome's Web Sender SDK, and in the
+ * Capacitor app the native Android Cast SDK (via the FlameCast plugin). Both speak the same custom
+ * receiver + protocol, so everything below (and every caller) is identical across platforms.
+ */
 @Injectable({ providedIn: 'root' })
 export class CastService {
-  private context: any;
-  private _session: any = null;
-  private initialized = false;
-  private messageListenerAttached = false;
+  private readonly transport: CastTransport;
 
-  constructor(private ngZone: NgZone) {}
-
-  readonly connected       = signal(false);
+  readonly connected: Signal<boolean>;
   readonly castPlaying     = signal(false);
   readonly castCurrentTime = signal(0);
   readonly castDuration    = signal(0);
   readonly castTrackId     = signal<number | null>(null);
 
-  init(): void {
-    if (this.initialized) return;
+  constructor(private ngZone: NgZone) {
+    this.transport = Capacitor.isNativePlatform()
+      ? new NativeCastTransport(ngZone)
+      : new WebCastTransport(ngZone);
+    this.connected = this.transport.connected;
 
-    const waitForCast = () =>
-      new Promise<void>((resolve) => {
-        const tick = () => {
-          if (window.cast && window.chrome?.cast?.isAvailable) return resolve();
-          setTimeout(tick, 100);
-        };
-        tick();
-      });
-
-    waitForCast().then(() => {
-      const castContext = (window as any).cast.framework.CastContext.getInstance();
-      castContext.setOptions({
-        autoJoinPolicy: (window as any).chrome.cast.AutoJoinPolicy.TAB_AND_ORIGIN_SCOPED,
-        receiverApplicationId: RECEIVER_APP_ID,
-      });
-      this.context = castContext;
-      this.initialized = true;
-
-      castContext.addEventListener(
-        (window as any).cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
-        (e: any) => {
-          const SS = (window as any).cast.framework.SessionState;
-          console.log('[Cast] Session state changed:', e.sessionState);
-          if (e.sessionState === SS.SESSION_STARTED || e.sessionState === SS.SESSION_RESUMED) {
-            this._session = castContext.getCurrentSession();
-            this.attachMessageListener();
-            this.connected.set(true);
-          } else if (e.sessionState === SS.SESSION_ENDED || e.sessionState === SS.NO_SESSION) {
-            this._session = null;
-            this.messageListenerAttached = false;
-            this.connected.set(false);
-            this.castPlaying.set(false);
-            this.castCurrentTime.set(0);
-          }
-        }
-      );
-    });
-  }
-
-  isConnected(): boolean { return this.connected(); }
-  isReady(): boolean     { return !!this.context; }
-
-  async requestSession(): Promise<any> {
-    if (this._session) return this._session;
-    this._session = await this.context.requestSession();
-    this.attachMessageListener();
-    this.connected.set(true);
-    return this._session;
-  }
-
-  // Receiver broadcasts {type:'status', t, dur, paused, trackId} every second.
-  private attachMessageListener() {
-    if (!this._session || this.messageListenerAttached) return;
-    this.messageListenerAttached = true;
-    this._session.addMessageListener(NS, (_ns: string, raw: string) => {
-      let m: any;
-      try { m = JSON.parse(raw); } catch { return; }
+    // Receiver broadcasts {type:'status', t, dur, paused, trackId} every second.
+    this.transport.onMessage((m) => {
       if (m?.type !== 'status') return;
-      this.ngZone.run(() => {
-        this.castCurrentTime.set(m.t ?? 0);
-        if (m.dur > 0) this.castDuration.set(m.dur);
-        this.castPlaying.set(!m.paused);
-        this.castTrackId.set(m.trackId ?? null);
-      });
+      this.castCurrentTime.set(m.t ?? 0);
+      if (m.dur > 0) this.castDuration.set(m.dur);
+      this.castPlaying.set(!m.paused);
+      this.castTrackId.set(m.trackId ?? null);
+    });
+
+    // Clear transient playback state whenever a session drops.
+    effect(() => {
+      if (!this.connected()) {
+        this.castPlaying.set(false);
+        this.castCurrentTime.set(0);
+      }
     });
   }
 
-  private send(msg: object) {
-    if (!this._session) return;
-    this._session.sendMessage(NS, msg).catch?.((e: any) =>
-      console.error('[Cast] sendMessage failed:', e));
+  init(): void { this.transport.init(); }
+  isConnected(): boolean { return this.connected(); }
+  isReady(): boolean     { return this.transport.available(); }
+
+  async requestSession(): Promise<void> {
+    await this.transport.requestSession();
   }
+
+  private send(msg: object) { this.transport.send(msg); }
 
   // ── Media controls (all via the custom channel) ───────────────────────────
 
-  play()  { this.send({ type: 'play' }); this.castPlaying.set(true); }
+  play()  { this.send({ type: 'play' });  this.castPlaying.set(true); }
   pause() { this.send({ type: 'pause' }); this.castPlaying.set(false); }
 
   togglePlay() {
@@ -130,17 +88,14 @@ export class CastService {
     startTime?: number,
     thumbUrl?: string,
   ) {
-    if (!this.isReady()) this.init();
-    const session = this.context.getCurrentSession() ?? await this.context.requestSession();
-    this._session = session;
-    this.attachMessageListener();
+    await this.transport.requestSession();
 
     const mediaUrl = url.startsWith('http') ? url : `${CAST_MEDIA_BASE}${url}`;
     console.log(`[Cast] Loading media (custom channel): ${mediaUrl}`);
 
     if (duration && duration > 0) this.castDuration.set(duration);
 
-    await session.sendMessage(NS, {
+    this.transport.send({
       type: 'load',
       url: mediaUrl,
       title,

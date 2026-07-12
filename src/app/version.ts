@@ -6,4 +6,4 @@
  * publish the new bundle.zip (see scripts/publish-ota.mjs). After capgo applies a bundle,
  * the now-running code carries the new value here, so the next launch sees "up to date".
  */
-export const WEB_VERSION = '1.0.0';
+export const WEB_VERSION = '1.0.2';

@@ -4,4 +4,6 @@
     <string name="title_activity_main">FlameStream</string>
     <string name="package_name">com.tdonsoft.flamestream</string>
     <string name="custom_url_scheme">com.tdonsoft.flamestream</string>
+    <!-- Custom Cast receiver app id. MUST match RECEIVER_APP_ID in env-cast.ts (the web sender). -->
+    <string name="cast_receiver_app_id">C11796B2</string>
 </resources>

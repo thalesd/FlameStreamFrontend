@@ -20,6 +20,11 @@
             </intent-filter>
         </activity>
 
+        <!-- Cast SDK: points the framework at our CastOptions (custom receiver app id). -->
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="com.tdonsoft.flamestream.CastOptionsProvider" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
